@@ -6,7 +6,6 @@ from src.ui import page_setup, render_sidebar
 
 
 page_setup("Kurumsal Değerleme Platformu", "📈")
-render_sidebar()
 
 pages = [
     st.Page("pages/1_Executive_Summary.py", title="Yönetici Özeti", icon="📊", default=True),
@@ -16,8 +15,10 @@ pages = [
     st.Page("pages/5_Comparable_Companies.py", title="Benzer Şirketler", icon="🏢"),
     st.Page("pages/6_Sensitivity_and_Scenarios.py", title="Duyarlılık ve Senaryolar", icon="🎛️"),
     st.Page("pages/7_Report_Center.py", title="Rapor Merkezi", icon="📥"),
+    st.Page("pages/8_Private_Company_DCF.py", title="Özel Şirket DCF", icon="🔒"),
 ]
 
 navigation = st.navigation(pages, position="sidebar")
+if navigation.title != "Özel Şirket DCF":
+    render_sidebar()
 navigation.run()
-

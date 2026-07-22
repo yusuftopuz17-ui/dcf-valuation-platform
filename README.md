@@ -1,6 +1,6 @@
 # DCF Engine + Comparable Company Valuation Platform
 
-Kurumsal görünümlü, çok sayfalı bir Streamlit değerleme uygulaması. Gerçek halka açık şirket verilerini indirir; tarihsel performansı analiz eder; beş ila on yıllık işletme tahmini, UFCF, WACC, iki terminal değer yöntemi, benzer şirketler, duyarlılık tabloları, ayı/baz/boğa senaryoları ve football-field değerlemesi üretir.
+Kurumsal görünümlü, çok sayfalı bir Streamlit değerleme uygulaması. Halka açık şirket verilerini analiz eder; ayrıca finansal verisi sınırlı özel şirketler için ayrı bir DCF iş akışı sunar. Beş ila on yıllık işletme tahmini, FCFF, WACC, iki terminal değer yöntemi, benzer şirketler, duyarlılık tabloları, ayı/baz/boğa senaryoları ve football-field değerlemesi üretir.
 
 Uygulama yatırım bankacılığı, özel sermaye, equity research, kurumsal finans ve üniversite çalışmalarında kullanılmak üzere tasarlanmıştır. Sonuçlar yatırım tavsiyesi değildir.
 
@@ -21,6 +21,8 @@ Uygulama yatırım bankacılığı, özel sermaye, equity research, kurumsal fin
 - Excel, CSV, PDF ve PowerPoint indirmeleri
 - Koyu siyah/füme kurumsal tasarım
 - Pahalı veri indirmelerinde `st.cache_data` ve açık çalıştırma düğmesi
+- Özel şirketler için normalizasyon kayıtları, benzer şirketlerden kaldıraçsız/kaldıraçlı beta ve ayrı risk düzeltmesi
+- Eksik veri durumunda uydurma parasal değer yerine yalnızca doğrulanabilir oran ve kıyas sonuçları
 
 ## Sayfalar
 
@@ -31,6 +33,7 @@ Uygulama yatırım bankacılığı, özel sermaye, equity research, kurumsal fin
 5. **Benzer Şirketler:** Ticari çarpanlar, aykırı gözlemler, dağılımlar, prim/iskonto ve ima edilen değerler.
 6. **Duyarlılık ve Senaryolar:** Üç ısı haritası ve ayı/baz/boğa sonuçları.
 7. **Rapor Merkezi:** Excel, CSV ZIP, PDF ve PowerPoint raporları; kontroller ve kaynaklar.
+8. **Özel Şirket DCF:** Raporlanan ve normalize edilmiş finansallar, özel şirket betası, iki WACC görünümü, iki terminal yöntem, özsermaye köprüsü, senaryolar ve güven seviyesi.
 
 ## Finansal metodoloji
 
@@ -56,6 +59,18 @@ Sürekli Büyüme TV = UFCF(N) x (1 + g) / (WACC - g)
 ```
 
 İşletme değeri net borçla düzeltilerek özsermaye değerine, seyreltilmiş hisse sayısıyla bölünerek hisse başına değere ulaşılır.
+
+### Özel şirket metodolojisi
+
+Özel şirket sayfası halka açık şirket modelinden bağımsız çalışır. Kullanıcı üç ila beş yıllık finansalları ve tek seferlik düzeltmeleri girer; her düzeltme gerekçe ve onay kaydıyla raporlanır. Tahminler şirket geçmişi, benzer şirket medyanları ve olgunlaşma varsayımlarını birleştirir. FCFF şu şekilde hesaplanır:
+
+```text
+FCFF = EBIT x (1 - vergi oranı) + D&A - Capex - işletme sermayesi değişimi
+```
+
+Özel şirket betası, benzer şirketlerin betalarını sermaye yapısından arındırıp hedef borç/özsermaye yapısıyla yeniden kaldıraçlandırır. İlave özel şirket risk düzeltmesi ayrı gösterilir; WACC hem bu düzeltme hariç hem dâhil raporlanır. Sürekli büyüme ve çıkış çarpanı yöntemleri birlikte sunulur. Nakit, faaliyet dışı varlıklar, faizli borç ve borç benzeri yükümlülükler işletme değerinden özsermaye değerine açık bir köprüyle aktarılır.
+
+Geçerli hasılat, EBITDA, EBIT, FCFF veya güvenilir bir ölçek girdisi bulunmadığında model parasal değer üretmez. Yalnızca oran, marj, benzer şirket ve veri boşluğu sonuçlarını gösterir. Kontrol primi, azınlık iskontosu veya pazarlanabilirlik iskontosu gibi hissedar düzeyi düzeltmeler isteğe bağlıdır ve faaliyet değerinden ayrı raporlanır.
 
 ## Veri kaynakları
 
@@ -106,7 +121,7 @@ Uygulama anahtar gerektirmeyen Yahoo Finance yolunu kullanır. Kurumsal ağlar v
 
 ```text
 ├── app.py
-├── pages/                 # Yedi uygulama sayfası
+├── pages/                 # Sekiz uygulama sayfası
 ├── src/                   # UI, cache, grafikler ve raporlama
 ├── valuation_platform/    # Finansal hesap motoru
 ├── assets/styles.css      # Siyah/füme tasarım sistemi
@@ -126,7 +141,7 @@ python -m compileall valuation_platform src pages app.py
 streamlit run app.py --server.headless true
 ```
 
-Testler; konfigürasyon, tahmin boyutları, hasılat, EBITDA, UFCF, WACC, terminal değer, özsermaye köprüsü, çarpanlar, aykırı değerler, ima edilen değer, duyarlılıklar, senaryo sıralaması, biçimlendirme, rapor üretimi ve Streamlit başlangıcını kapsar.
+Testler; konfigürasyon, tahmin boyutları, hasılat, EBITDA, FCFF, özel şirket normalizasyonları, özel şirket betası, eksik veri kontrolü, WACC, terminal değer, özsermaye köprüsü, çarpanlar, aykırı değerler, ima edilen değer, duyarlılıklar, senaryo sıralaması, biçimlendirme, rapor üretimi ve Streamlit sayfa başlangıçlarını kapsar.
 
 ## Sınırlamalar
 
