@@ -8,9 +8,11 @@ import zipfile
 from dataclasses import asdict
 from datetime import UTC, datetime
 from html import escape
+from pathlib import Path
 from typing import Any
 
 import matplotlib.pyplot as plt
+import matplotlib
 import numpy as np
 import pandas as pd
 from reportlab.lib import colors
@@ -112,8 +114,9 @@ def _chart_bytes(results: dict[str, Any], kind: str) -> io.BytesIO:
 
 def build_pdf(results: dict[str, Any]) -> bytes:
     """Generate a multi-page executive PDF report with charts and disclaimer."""
-    pdfmetrics.registerFont(TTFont("ValuationUnicode", "/System/Library/Fonts/Supplemental/Arial Unicode.ttf"))
-    pdfmetrics.registerFont(TTFont("ValuationUnicode-Bold", "/System/Library/Fonts/Supplemental/Arial.ttf"))
+    font_dir = Path(matplotlib.get_data_path()) / "fonts" / "ttf"
+    pdfmetrics.registerFont(TTFont("ValuationUnicode", str(font_dir / "DejaVuSans.ttf")))
+    pdfmetrics.registerFont(TTFont("ValuationUnicode-Bold", str(font_dir / "DejaVuSans-Bold.ttf")))
     output = io.BytesIO(); doc = SimpleDocTemplate(output, pagesize=landscape(A4), rightMargin=14*mm, leftMargin=14*mm, topMargin=12*mm, bottomMargin=12*mm)
     styles = getSampleStyleSheet(); styles.add(ParagraphStyle(name="TitleDark", parent=styles["Title"], fontName="ValuationUnicode-Bold", fontSize=24, leading=28, textColor=colors.HexColor("#111419"), alignment=TA_LEFT))
     styles.add(ParagraphStyle(name="Sub", parent=styles["BodyText"], fontName="ValuationUnicode", textColor=colors.HexColor("#4B5563"), fontSize=10, leading=14))
