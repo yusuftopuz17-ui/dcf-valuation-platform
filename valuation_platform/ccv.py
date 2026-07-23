@@ -166,6 +166,9 @@ def similarity_scores(target: dict[str, Any], candidates: pd.DataFrame, weights:
     """Return transparent, reproducible peer scores with component detail."""
     weights = weights or DEFAULT_WEIGHTS
     validate_weights(weights)
+    score_columns = ["Similarity Score", "Selection Reason"] + [f"Score · {key}" for key in weights]
+    if candidates.empty:
+        return pd.DataFrame(columns=score_columns, index=pd.Index([], name="Ticker"))
     rows = []
     for ticker, candidate in candidates.iterrows():
         components = {
@@ -223,6 +226,9 @@ def rank_peers(target: dict[str, Any], candidates: pd.DataFrame, boundaries: dic
                include: list[str] | None = None, exclude: list[str] | None = None,
                locked: list[str] | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
     filtered, rejected = apply_boundaries(candidates, boundaries)
+    if filtered.empty:
+        empty_columns = list(candidates.columns) + ["Similarity Score", "Selection Reason", "Manual Status"]
+        return pd.DataFrame(columns=empty_columns, index=pd.Index([], name="Ticker")), rejected
     scored = filtered.join(similarity_scores(target, filtered, weights))
     include_set = {x.upper() for x in (include or [])}; exclude_set = {x.upper() for x in (exclude or [])}
     locked_set = {x.upper() for x in (locked or [])}
@@ -332,11 +338,21 @@ def confidence_assessment(peers: pd.DataFrame, summary: pd.DataFrame, target: di
 def run_ccv(target: dict[str, Any], candidates: pd.DataFrame, project: ValuationProject,
             bridge: dict[str, Any]) -> dict[str, Any]:
     """Run the complete deterministic CCV analysis."""
+    if candidates.empty:
+        raise ValueError(
+            "Doğrulanmış aday şirket bulunamadı. Yahoo Finance erişimini kontrol edin veya "
+            "manuel aday sembolleri ekleyin."
+        )
     multiples = calculate_multiples(candidates)
     selected, rejected = rank_peers(target, multiples, project.boundaries, project.similarity_weights,
                                     int(project.manual_overrides.get("target_peer_count", 8)),
                                     float(project.manual_overrides.get("minimum_similarity", .35)),
                                     project.included_peers, project.excluded_peers, project.locked_peers)
+    if selected.empty:
+        raise ValueError(
+            "Filtreler ve minimum benzerlik puanı sonrasında kullanılabilir benzer şirket kalmadı. "
+            "Reddedilen adayları inceleyin; sınırları veya minimum benzerlik puanını açıkça gevşetin."
+        )
     clean, outlier_audit, outlier_summary = clean_outliers(
         selected, project.outlier_settings.get("method", "IQR"),
         float(project.outlier_settings.get("threshold", 1.5)),

@@ -140,6 +140,19 @@ def test_description_only_private_company_has_no_monetary_value():
     assert result["implied_valuations"].empty
 
 
+def test_empty_candidate_universe_has_clear_error():
+    project = ValuationProject(selected_method="Comparable Companies", company_type="Public")
+    with pytest.raises(ValueError, match="Doğrulanmış aday şirket bulunamadı"):
+        run_ccv(target(), pd.DataFrame(), project, {"Cash": 0, "Debt": 0})
+
+
+def test_fully_filtered_candidate_universe_has_clear_error():
+    project = ValuationProject(selected_method="Comparable Companies", company_type="Public")
+    project.boundaries = {"min_Revenue": 1_000_000}
+    with pytest.raises(ValueError, match="kullanılabilir benzer şirket kalmadı"):
+        run_ccv(target(), candidates(), project, {"Cash": 0, "Debt": 0})
+
+
 def test_private_company_with_revenue_and_ebitda_uses_only_applicable_metrics():
     project = ValuationProject(selected_method="Comparable Companies", company_type="Private")
     partial = {**target(), "EBIT": None, "Net Income": None}

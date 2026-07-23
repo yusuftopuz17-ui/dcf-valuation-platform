@@ -73,6 +73,24 @@ target: dict = {}
 private_profile: dict = {}
 
 if project.company_type == "Public":
+    if st.button("Microsoft (MSFT) örneğini doldur", type="secondary", use_container_width=True):
+        project.public_identifier = {
+            "Company": "Microsoft Corporation", "Ticker": "MSFT", "Exchange": "NASDAQ",
+            "Country": "United States", "Sector": "Technology", "Currency": "USD",
+        }
+        project.target_identity = project.public_identifier.copy()
+        save_project(project)
+        st.session_state["public_query"] = "MSFT"
+        st.session_state["public_currency"] = "USD"
+        st.session_state["public_geo"] = "North America"
+        st.session_state["candidate_tickers"] = "AAPL, GOOGL, ORCL, CRM, ADBE, SAP, NOW, IBM"
+        st.session_state["auto_discover_candidates"] = False
+        st.session_state["example_notice"] = (
+            "MSFT örneği yüklendi. Finansal veriler analiz çalıştırıldığında Yahoo Finance'tan alınacaktır."
+        )
+        st.rerun()
+    if st.session_state.get("example_notice"):
+        st.success(st.session_state["example_notice"])
     section("A · Halka Açık Şirket Çözümleme")
     query_col, exchange_col, search_col = st.columns([2, 1, .7])
     query = query_col.text_input("Şirket adı veya sembol", key="public_query", placeholder="Microsoft veya MSFT")
@@ -103,6 +121,41 @@ if project.company_type == "Public":
     geography_preference = c3.text_input("Benzer şirket coğrafya tercihi", key="public_geo", placeholder="North America, Europe")
     description = ""
 else:
+    if st.button("Canva özel şirket profil örneğini doldur", type="secondary", use_container_width=True):
+        example_values = {
+            "private_name": "Canva", "private_website": "https://www.canva.com",
+            "private_description": "Çevrim içi görsel iletişim ve tasarım platformu.",
+            "private_hq": "Australia", "private_countries": "Global", "private_founding": 2013,
+            "private_currency": "USD", "private_sector": "Technology", "private_subsector": "Software",
+            "private_business_model": ["SaaS", "Subscription", "Service-based"],
+            "private_customers": ["B2B", "B2C", "Enterprise customers", "Individual consumers"],
+            "private_concentration": "Other", "private_recurring_customers": "Mixed",
+            "private_growth_profile": "High growth", "private_profit_profile": "Other",
+            "private_profit_profile_other": "Doğrulanmış özel şirket kârlılık verisi girilmedi",
+            "private_geography": ["Global", "Developed markets", "Emerging markets"],
+            "private_revenue_geo": "Global", "private_size": "Large",
+            "private_revenue_model": ["Recurring subscription", "Service fees", "Mixed"],
+            "private_unit": "millions",
+            "candidate_tickers": "ADBE, CRM, WIX, DOCU, FVRR, UPWK, HUBS, TEAM",
+            "auto_discover_candidates": False,
+        }
+        for key, value in example_values.items():
+            st.session_state[key] = value
+        for key in [
+            "private_revenue", "private_ebitda", "private_ebit", "private_net_income",
+            "private_assets", "private_prior_ev", "private_growth", "private_cagr",
+            "private_ebitda_margin", "private_ebit_margin", "private_net_margin",
+            "private_cash", "private_debt", "private_preferred", "private_nci",
+            "private_nonop", "private_debt_like",
+        ]:
+            st.session_state[key] = ""
+        st.session_state["example_notice"] = (
+            "Canva profil örneği yüklendi. Doğrulanmamış özel şirket finansalları uydurulmadığı için "
+            "parasal alanlar boş bırakıldı; sonuç yalnızca peer benchmarkı üretir."
+        )
+        st.rerun()
+    if st.session_state.get("example_notice"):
+        st.info(st.session_state["example_notice"])
     section("A · Özel Şirket Profili")
     identity_tab, business_tab, finance_tab = st.tabs(["Kimlik ve Sektör", "İş Modeli ve Pazar", "Ölçek ve Finansallar"])
     with identity_tab:
@@ -199,7 +252,7 @@ else:
 
 section("B · Doğrulanmış Aday Evreni ve Gelişmiş Arama")
 banner("Doğrulanmış evren", "Sistem Yahoo Finance sektör taramasından gerçek şirketler bulur. Manuel semboller tarama evrenine eklenir; hiçbir şirket veya finansal veri uydurulmaz.")
-auto_discover = st.toggle("Sektöre göre otomatik aday taraması", True)
+auto_discover = st.toggle("Sektöre göre otomatik aday taraması", True, key="auto_discover_candidates")
 candidate_text = st.text_area("Manuel aday halka açık şirket sembolleri · isteğe bağlı", key="candidate_tickers",
                               placeholder="Örn. AAPL, MSFT, GOOGL (virgülle ayırın)")
 c1, c2, c3, c4 = st.columns(4)
