@@ -1,11 +1,22 @@
 # DCF Engine + Comparable Company Valuation Platform
 
-Kurumsal görünümlü, çok sayfalı bir Streamlit değerleme uygulaması. Halka açık şirket verilerini analiz eder; ayrıca finansal verisi sınırlı özel şirketler için ayrı bir DCF iş akışı sunar. Beş ila on yıllık işletme tahmini, FCFF, WACC, iki terminal değer yöntemi, benzer şirketler, duyarlılık tabloları, ayı/baz/boğa senaryoları ve football-field değerlemesi üretir.
+Kurumsal görünümlü, çok yöntemli bir Streamlit değerleme uygulaması. Açılışta kullanıcı Comparable Company Valuation (CCV), DCF veya Emsal İşlemler yöntemini seçer. Bu sürümde CCV uçtan uca uygulanmıştır; mevcut DCF motoru kod tabanında korunmuş, yeni DCF ve Emsal İşlemler çalışma alanları sonraki aşama için açıkça etiketlenmiştir.
 
 Uygulama yatırım bankacılığı, özel sermaye, equity research, kurumsal finans ve üniversite çalışmalarında kullanılmak üzere tasarlanmıştır. Sonuçlar yatırım tavsiyesi değildir.
 
 ## Başlıca özellikler
 
+- Kalıcı yatay yöntem sekmeleri ve oturum boyunca bağımsız proje durumu
+- Halka açık ve özel şirket için ayrı CCV kurulum akışları
+- Şirket adı/sembol araması ve belirsiz sonuçlarda zorunlu kullanıcı onayı
+- Yahoo Finance sektör taramasıyla gerçek aday keşfi; manuel dahil/hariç/kilit kontrolleri
+- Sektör, alt sektör, iş modeli, müşteri, coğrafya, ölçek, büyüme, kârlılık ve hasılat modeli puanlaması
+- Normalize edilmiş Metrics & Boundaries sınırları ve para birimi uyumsuzluğu kontrolleri
+- EV/Revenue, EV/EBITDA, EV/EBIT ve P/E; negatif paydalarda N/M
+- IQR, winsorizasyon, z-skoru veya aykırı değer temizlememe
+- Medyan esaslı ima edilen işletme, özsermaye ve hisse başına değer aralıkları
+- CCV’ye özel Yönetici Özeti, Tarihsel Performans, Benzer Şirketler ve Rapor Merkezi
+- CCV’ye özel Excel, CSV ZIP ve PDF çıktıları
 - Hedef şirket ve benzer şirket sembollerini değiştirme
 - Yıl bazında hasılat büyümesi ve EBITDA marjı girişi
 - Vergi, D&A, Capex ve işletme sermayesi sürücüleri
@@ -24,16 +35,38 @@ Uygulama yatırım bankacılığı, özel sermaye, equity research, kurumsal fin
 - Özel şirketler için normalizasyon kayıtları, benzer şirketlerden kaldıraçsız/kaldıraçlı beta ve ayrı risk düzeltmesi
 - Eksik veri durumunda uydurma parasal değer yerine yalnızca doğrulanabilir oran ve kıyas sonuçları
 
-## Sayfalar
+## Aktif CCV sayfaları
 
-1. **Yönetici Özeti:** KPI kartları, değerleme aralığı, football field, senaryolar ve temel bulgular.
-2. **Tarihsel Performans:** Finansal tablolar, büyüme, marj, FCF dönüşümü, Capex ve net borç.
-3. **Tahmin Modeli:** Tarihsel/tahmin ayrımı, sürücüler, hasılat, kârlılık ve UFCF.
-4. **DCF Değerleme:** WACC, iskonto tablosu, terminal değer, işletme-özsermaye köprüsü ve uyarılar.
-5. **Benzer Şirketler:** Ticari çarpanlar, aykırı gözlemler, dağılımlar, prim/iskonto ve ima edilen değerler.
-6. **Duyarlılık ve Senaryolar:** Üç ısı haritası ve ayı/baz/boğa sonuçları.
-7. **Rapor Merkezi:** Excel, CSV ZIP, PDF ve PowerPoint raporları; kontroller ve kaynaklar.
-8. **Özel Şirket DCF:** Raporlanan ve normalize edilmiş finansallar, özel şirket betası, iki WACC görünümü, iki terminal yöntem, özsermaye köprüsü, senaryolar ve güven seviyesi.
+1. **CCV Kurulumu:** Şirket türü, profil, gerçek şirket çözümleme, aday keşfi, sınırlar ve ağırlıklar.
+2. **Yönetici Özeti:** Hedef profili, peer güveni, ana çarpan ve değer aralıkları.
+3. **Tarihsel Performans:** Halka açık şirket verileri veya özel şirket veri girişi; DCF tahmini içermez.
+4. **Benzer Şirketler:** Sıralama, reddedilenler, çarpanlar, istatistikler, aykırı değerler ve football field.
+5. **Rapor Merkezi:** CCV’ye özel önizleme, Excel, CSV ve PDF.
+
+Eski DCF sayfaları ve özel şirket DCF motoru silinmemiştir. Yeni yöntem navigasyonunda bilinçli olarak gizlidir ve sonraki geliştirme aşamasında DCF sekmesine bağlanacaktır.
+
+## CCV benzer şirket metodolojisi
+
+```text
+Benzerlik Puanı =
+%15 Sektör + %20 Alt Sektör + %15 İş Modeli + %10 Müşteri Yapısı
++ %10 Coğrafya + %10 Ölçek + %7,5 Büyüme + %7,5 Kârlılık + %5 Hasılat Modeli
+```
+
+Kullanıcı ağırlıkları değiştirebilir; toplamın her zaman %100 olması gerekir. Adaylar önce açık kullanıcı sınırlarından geçirilir, ardından deterministik olarak puanlanır. Sistem hedef peer sayısına ulaşmak için sınırları sessizce gevşetmez.
+
+Ana çarpanlar:
+
+```text
+İşletme Değeri = Piyasa Değeri + Borç + İmtiyazlı Özsermaye
+                 + Kontrol Gücü Olmayan Paylar - Nakit
+EV/Revenue = İşletme Değeri / Hasılat
+EV/EBITDA = İşletme Değeri / EBITDA
+EV/EBIT = İşletme Değeri / EBIT
+P/E = Özsermaye Değeri / Net Kâr
+```
+
+Sıfır veya negatif EBITDA, EBIT ve net kâr için ilgili çarpan hesaplanmaz ve arayüzde **N/M** gösterilir. Ana değerleme referansı medyandır; 25. ve 75. yüzdelikler tavsiye aralığını oluşturur.
 
 ## Finansal metodoloji
 
@@ -121,7 +154,7 @@ Uygulama anahtar gerektirmeyen Yahoo Finance yolunu kullanır. Kurumsal ağlar v
 
 ```text
 ├── app.py
-├── pages/                 # Sekiz uygulama sayfası
+├── pages/                 # Yöntem seçimi, CCV sayfaları, yer tutucular ve korunmuş eski DCF sayfaları
 ├── src/                   # UI, cache, grafikler ve raporlama
 ├── valuation_platform/    # Finansal hesap motoru
 ├── assets/styles.css      # Siyah/füme tasarım sistemi
@@ -141,7 +174,7 @@ python -m compileall valuation_platform src pages app.py
 streamlit run app.py --server.headless true
 ```
 
-Testler; konfigürasyon, tahmin boyutları, hasılat, EBITDA, FCFF, özel şirket normalizasyonları, özel şirket betası, eksik veri kontrolü, WACC, terminal değer, özsermaye köprüsü, çarpanlar, aykırı değerler, ima edilen değer, duyarlılıklar, senaryo sıralaması, biçimlendirme, rapor üretimi ve Streamlit sayfa başlangıçlarını kapsar.
+Testler; yöntem seçimi, şirket türü dallanması, taksonomi, birim ve sınır normalizasyonu, ağırlık toplamı, benzerlik puanı, manuel peer kontrolleri, negatif paydalarda N/M, aykırı değerler, medyan/çeyreklikler, ima edilen işletme ve özsermaye değeri, hisse başına değer, eksik finansal veri, rapor çıktıları, korunmuş DCF hesapları ve Streamlit başlangıcını kapsar.
 
 ## Sınırlamalar
 
@@ -150,6 +183,9 @@ Testler; konfigürasyon, tahmin boyutları, hasılat, EBITDA, FCFF, özel şirke
 - Benzer şirket seçimi özneldir.
 - Şirketlerin muhasebe ve GAAP dışı düzeltmeleri farklı olabilir.
 - Para birimi farklılıkları karşılaştırılabilirliği etkiler; otomatik FX çevirisi yapılmaz.
+- Döneme özgü doğrulanmış FX sağlayıcısı yapılandırılmadığı için parasal sınırlar yalnızca aynı para birimindeki adaylara uygulanır; uyumsuz adaylar gerekçeyle reddedilir.
+- Yahoo sektör taraması geniş bir başlangıç evrenidir; iş modeli ve müşteri yapısı sağlayıcıda bulunmadığında puan bileşeni nötr kabul edilir.
+- Haricî bir yapay zekâ sağlayıcısı yapılandırılmamıştır. Nitel açıklamalar deterministik kurallarla üretilir; matematiksel CCV akışı bundan etkilenmez.
 - Terminal değer DCF'nin büyük bölümünü oluşturabilir.
 - API verileri gecikmiş, eksik veya revize edilmiş olabilir.
 - Piyasa fiyatları hızlı değişebilir.

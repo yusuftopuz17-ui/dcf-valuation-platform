@@ -94,7 +94,7 @@ def peer_scatter(peers: pd.DataFrame, x: str, y: str, title: str) -> go.Figure:
     return layout(fig, title)
 
 
-def football_field(football: pd.DataFrame, current: float, blended: float) -> go.Figure:
+def football_field(football: pd.DataFrame, current: float | None = None, blended: float | None = None) -> go.Figure:
     frame = football.sort_values("Median")
     fig = go.Figure()
     for _, row in frame.iterrows():
@@ -102,8 +102,10 @@ def football_field(football: pd.DataFrame, current: float, blended: float) -> go
                                  line={"color": COLORS["blue"], "width": 12}, hovertemplate=f"{row['Method']}<br>Düşük: $%{{x:,.2f}}<extra></extra>", showlegend=False))
         fig.add_trace(go.Scatter(x=[row["Median"]], y=[row["Method"]], mode="markers", marker={"color": COLORS["text"], "size": 9}, showlegend=False,
                                  hovertemplate="Medyan: $%{x:,.2f}<extra></extra>"))
-    fig.add_vline(x=current, line_dash="dash", line_color=COLORS["red"], annotation_text="Mevcut fiyat")
-    fig.add_vline(x=blended, line_dash="dot", line_color=COLORS["teal"], annotation_text="Harmanlanmış değer")
+    if current is not None and np.isfinite(current):
+        fig.add_vline(x=current, line_dash="dash", line_color=COLORS["red"], annotation_text="Mevcut fiyat")
+    if blended is not None and np.isfinite(blended):
+        fig.add_vline(x=blended, line_dash="dot", line_color=COLORS["teal"], annotation_text="Harmanlanmış değer")
     return layout(fig, "Football-Field Değerleme", 500, "$,.0f")
 
 

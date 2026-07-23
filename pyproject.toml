@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "institutional-valuation-platform"
-version = "2.1.0"
-description = "Streamlit public and private-company DCF and comparable-company valuation platform"
+version = "3.0.0"
+description = "Multi-method Streamlit valuation platform with deterministic comparable-company analysis"
 requires-python = ">=3.10"
 dependencies = [
   "streamlit>=1.39,<2",
