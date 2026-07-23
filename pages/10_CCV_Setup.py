@@ -240,9 +240,20 @@ with st.expander("Metrics & Boundaries", expanded=False):
 with st.expander("Benzerlik Puanı Ağırlıkları"):
     weights = render_weights(project.similarity_weights)
 
-run_disabled = project.company_type == "Public" and not project.public_identifier
-if st.button("CCV Analizini Çalıştır", type="primary", use_container_width=True, disabled=run_disabled):
+public_target_missing = project.company_type == "Public" and not project.public_identifier
+if public_target_missing:
+    st.warning(
+        "CCV analizinden önce hedef şirketi sayfanın üstündeki **Şirket adı veya sembol** "
+        "alanında arayın ve **Seçilen Şirketi Onayla** düğmesine basın. "
+        "Belirsiz bir şirket otomatik olarak seçilmez."
+    )
+if st.button("CCV Analizini Çalıştır", type="primary", use_container_width=True):
     try:
+        if public_target_missing:
+            raise ValueError(
+                "Hedef şirket henüz onaylanmadı. Önce şirketi arayın, doğru sonucu seçin "
+                "ve 'Seçilen Şirketi Onayla' düğmesine basın."
+            )
         validate_weights(weights)
         candidate_tickers = [item.strip().upper() for item in candidate_text.split(",") if item.strip()]
         with st.spinner("Gerçek finansal veriler indiriliyor, sınırlar uygulanıyor ve benzerlik puanları hesaplanıyor..."):
