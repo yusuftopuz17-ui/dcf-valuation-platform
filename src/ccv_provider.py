@@ -119,6 +119,8 @@ def company_record(ticker: str, years: int = 5, period: str = "TTM") -> dict[str
         "Net Margin": float(latest["Net Income"] / revenue) if revenue > 0 and np.isfinite(latest["Net Income"]) else np.nan,
         "Analyst Target": pd.to_numeric(info.get("targetMeanPrice"), errors="coerce"),
         "Analyst Count": pd.to_numeric(info.get("numberOfAnalystOpinions"), errors="coerce"),
+        "Free Cash Flow": pd.to_numeric(info.get("freeCashflow"), errors="coerce"),
+        "Operating Cash Flow": pd.to_numeric(info.get("operatingCashflow"), errors="coerce"),
         "Employees": pd.to_numeric(info.get("fullTimeEmployees"), errors="coerce"),
         "Financial Period": f"{period} / sağlayıcıdaki son kullanılabilir mali dönem",
         "Financial Date": str(financials.index[-1].date()), "Price Date": market["Price Date"],

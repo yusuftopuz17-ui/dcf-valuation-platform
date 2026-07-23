@@ -9,6 +9,7 @@ from valuation_platform.market_tools import (
     dcf_sensitivity,
     forward_dcf,
     reverse_dcf,
+    reverse_dcf_sensitivity,
     scenario_table,
 )
 
@@ -27,6 +28,9 @@ def test_dcf_sensitivity_and_scenarios():
     cases = scenario_table(100, .10, .025, .09, 5, 10, 20, 80, True, False)
     assert cases.loc["Ayı", "Hisse Başı Değer"] < cases.loc["Baz", "Hisse Başı Değer"]
     assert cases.loc["Baz", "Hisse Başı Değer"] < cases.loc["Boğa", "Hisse Başı Değer"]
+    reverse_grid = reverse_dcf_sensitivity(80, 100, .025, .09, 5, 10, 20, True, False)
+    assert reverse_grid.shape == (3, 3)
+    assert np.isfinite(reverse_grid.to_numpy()).all()
 
 
 def test_comparable_implied_prices_use_ev_bridge():
@@ -41,3 +45,19 @@ def test_comparable_implied_prices_use_ev_bridge():
     implied = comparable_implied_prices(target, peers)
     assert implied.loc["EV/EBITDA", "İma Edilen Fiyat"] == pytest.approx((1200 - 20) / 10)
     assert np.isfinite(implied["İma Edilen Fiyat"]).all()
+
+
+def test_comparable_implied_prices_ignores_non_economic_provider_multiples():
+    target = pd.Series({
+        "EBITDA": 100.0, "Net Income": 80.0, "Revenue": 500.0, "Equity": 250.0,
+        "Diluted Shares": 10.0, "Net Debt": 20.0, "Current Price": 25.0,
+    })
+    peers = pd.DataFrame({
+        "EV/EBITDA": [10.0, 12.0, 33000.0],
+        "P/E": [18.0, 20.0, 20000.0],
+        "P/S": [3.0, 4.0, 5000.0],
+        "P/B": [5.0, 6.0, 30000.0],
+    })
+    implied = comparable_implied_prices(target, peers)
+    assert implied.loc["EV/EBITDA", "Benzer Medyanı"] == pytest.approx(11.0)
+    assert implied.loc["P/E", "Benzer Medyanı"] == pytest.approx(19.0)

@@ -40,12 +40,13 @@ def test_msft_preset_is_available_in_comparable_tool():
     assert not test.exception
 
 
-def test_dcf_tool_opens_with_forward_and_reverse_tabs():
+def test_dcf_tool_opens_with_forward_and_reverse_modes():
     from streamlit.testing.v1 import AppTest
     app = Path(__file__).resolve().parents[1] / "app.py"
     test = AppTest.from_file(str(app), default_timeout=20).run()
     selects = [button for button in test.button if button.label == "Yöntemi Seç"]
     selects[1].click().run()
     assert any(button.label == "Verileri Yükle" for button in test.button)
-    assert [tab.label for tab in test.tabs] == ["İleri DCF · Makul Değer", "Ters DCF · İma Edilen Büyüme"]
+    mode = next(item for item in test.radio if item.label == "Analiz modu")
+    assert mode.options == ["İleri DCF — Makul Değer", "Ters DCF — İma Edilen Büyüme"]
     assert not test.exception

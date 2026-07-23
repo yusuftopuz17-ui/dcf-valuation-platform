@@ -62,6 +62,26 @@ def reverse_dcf(target_price: float, base_fcf: float, terminal_growth: float, wa
     return (low + high) / 2
 
 
+def reverse_dcf_sensitivity(target_price: float, base_fcf: float, terminal_growth: float,
+                            wacc: float, years: int, shares: float, net_debt: float = 0.0,
+                            mid_year: bool = False, fade_growth: bool = False) -> pd.DataFrame:
+    """Return the implied growth rate across a compact WACC × terminal-growth grid."""
+    rates = np.array([max(.01, wacc - .02), wacc, wacc + .02])
+    terminals = np.array([max(-.01, terminal_growth - .01), terminal_growth, terminal_growth + .01])
+    values = []
+    for rate in rates:
+        row = []
+        for terminal in terminals:
+            if rate <= terminal:
+                row.append(np.nan)
+            else:
+                row.append(reverse_dcf(target_price, base_fcf, terminal, rate, years, shares,
+                                       net_debt, mid_year, fade_growth))
+        values.append(row)
+    return pd.DataFrame(values, index=pd.Index(rates, name="WACC"),
+                        columns=pd.Index(terminals, name="Terminal Büyüme"))
+
+
 def dcf_sensitivity(base_fcf: float, growth: float, terminal_growth: float, wacc: float,
                     years: int, shares: float, net_debt: float, mid_year: bool,
                     fade_growth: bool, points: int = 9) -> pd.DataFrame:
@@ -100,10 +120,20 @@ def comparable_implied_prices(target: pd.Series, peers: pd.DataFrame) -> pd.Data
         "EV/EBITDA": ("EBITDA", True), "P/E": ("Net Income", False),
         "P/S": ("Revenue", False), "P/B": ("Equity", False),
     }
+    # Provider feeds can occasionally mix a foreign quote currency with financial
+    # statements reported in another currency. Exclude clearly non-economic
+    # observations from the valuation median while keeping raw tables auditable.
+    sensible_ceiling = {"EV/EBITDA": 250.0, "P/E": 500.0, "P/S": 100.0, "P/B": 100.0}
     rows = []
     shares = float(target.get("Diluted Shares", np.nan))
     for multiple, (metric, is_enterprise) in definitions.items():
-        median = pd.to_numeric(peers.get(multiple), errors="coerce").replace([np.inf, -np.inf], np.nan).dropna().median()
+        observations = (
+            pd.to_numeric(peers.get(multiple), errors="coerce")
+            .replace([np.inf, -np.inf], np.nan)
+            .dropna()
+        )
+        observations = observations[(observations > 0) & (observations <= sensible_ceiling[multiple])]
+        median = observations.median()
         fundamental = float(target.get(metric, np.nan))
         if not np.isfinite(median) or not np.isfinite(fundamental) or fundamental <= 0 or shares <= 0:
             continue

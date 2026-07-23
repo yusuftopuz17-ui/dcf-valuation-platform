@@ -12,6 +12,34 @@ from valuation_platform.ccv import calculate_multiples
 from valuation_platform.market_tools import comparable_implied_prices
 
 
+PEER_PRESETS = {
+    "MSFT": ["AAPL", "GOOGL", "ORCL", "CRM", "ADBE", "NOW", "IBM"],
+    "AAPL": ["MSFT", "GOOGL", "AMZN", "META", "DELL", "HPQ", "SONY"],
+    "GOOGL": ["META", "MSFT", "AMZN", "SNAP", "PINS", "TTD", "BIDU"],
+}
+
+SECTOR_PRESETS = {
+    "Technology": ["MSFT", "AAPL", "GOOGL", "ORCL", "CRM", "ADBE", "NOW", "IBM"],
+    "Communication Services": ["GOOGL", "META", "NFLX", "DIS", "TMUS", "VZ", "T"],
+    "Consumer Cyclical": ["AMZN", "TSLA", "HD", "MCD", "NKE", "SBUX", "LOW"],
+    "Consumer Defensive": ["WMT", "COST", "PG", "KO", "PEP", "PM", "CL"],
+    "Healthcare": ["LLY", "JNJ", "ABBV", "MRK", "PFE", "TMO", "ABT"],
+    "Financial Services": ["JPM", "BAC", "WFC", "C", "GS", "MS", "AXP"],
+    "Industrials": ["GE", "CAT", "HON", "RTX", "UPS", "DE", "ETN"],
+    "Energy": ["XOM", "CVX", "COP", "EOG", "SLB", "MPC", "PSX"],
+}
+
+
+def _candidate_universe(ticker: str, sector: str, manual: list[str]) -> list[str]:
+    """Prefer stable primary listings; fall back to Yahoo sector discovery."""
+    if manual:
+        return manual
+    candidates = PEER_PRESETS.get(ticker) or SECTOR_PRESETS.get(sector)
+    if candidates:
+        return [item for item in candidates if item != ticker]
+    return [item for item in discover_yahoo_candidates(sector, 20) if item != ticker]
+
+
 def _fmt_money(value: float, currency: str) -> str:
     if not np.isfinite(value):
         return "N/M"
@@ -55,11 +83,17 @@ if run:
             target_package = company_record(ticker)
             target_record = target_package["record"]
             manual = [item.strip().upper() for item in st.session_state.quick_comp_manual.split(",") if item.strip()]
-            universe = manual or discover_yahoo_candidates(target_record["Sector"], 12)
-            universe = [item for item in universe if item != ticker][:7]
+            universe = _candidate_universe(ticker, target_record["Sector"], manual)[:8]
             peer_frame, failures, histories = load_candidate_records(universe)
+            if not peer_frame.empty:
+                same_currency = peer_frame["Currency"].eq(target_record["Currency"])
+                same_country = peer_frame["Country"].eq(target_record["Country"])
+                peer_frame = peer_frame.loc[same_currency & same_country]
             if len(peer_frame) < 3:
-                raise ValueError("Sağlıklı bir medyan için en az 3 benzer şirket verisi gerekli.")
+                raise ValueError(
+                    "Aynı ülke ve para biriminde sağlıklı bir medyan için en az 3 benzer şirket verisi gerekli. "
+                    "Manuel benzer şirket alanına birincil borsa sembollerini girin."
+                )
             st.session_state.quick_comp_package = {
                 "target": target_record, "peers": peer_frame, "failures": failures,
                 "source": target_record["Data Source"], "retrieved": target_record["Retrieved At"],
