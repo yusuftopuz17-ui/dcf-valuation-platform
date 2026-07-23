@@ -30,6 +30,36 @@ def _money(value: float, currency: str, decimals: int = 1) -> str:
     return f"{currency} {value:,.2f}"
 
 
+def _tr_number(value: float, decimals: int = 0) -> str:
+    """Format editable values with Turkish thousands and decimal separators."""
+    formatted = f"{float(value):,.{decimals}f}"
+    return formatted.replace(",", "\u0000").replace(".", ",").replace("\u0000", ".")
+
+
+def _parse_tr_number(value: str) -> float:
+    """Parse the Turkish-formatted values rendered by `_tr_number`."""
+    cleaned = value.strip().replace(" ", "").replace(".", "").replace(",", ".")
+    return float(cleaned)
+
+
+def _set_grouped_display(key: str, value: float, decimals: int = 0) -> None:
+    st.session_state[key] = float(value)
+    st.session_state[f"{key}_display"] = _tr_number(value, decimals)
+
+
+def _grouped_number_input(label: str, key: str, decimals: int = 0, help_text: str | None = None) -> float:
+    """Use a text field because HTML number inputs cannot show thousands groups."""
+    display_key = f"{key}_display"
+    st.session_state.setdefault(display_key, _tr_number(st.session_state[key], decimals))
+    raw = st.text_input(label, key=display_key, help=help_text)
+    try:
+        parsed = _parse_tr_number(raw)
+        st.session_state[key] = parsed
+    except ValueError:
+        st.error(f"{label} geçerli bir sayı olmalıdır.")
+    return float(st.session_state[key])
+
+
 def _result_card(result: dict, company: str, currency: str) -> None:
     upside = result["Upside"]
     tone = "br-danger" if np.isfinite(upside) and upside < 0 else ""
@@ -54,14 +84,16 @@ def _result_card(result: dict, company: str, currency: str) -> None:
 
 def _assumption_inputs(include_growth: bool) -> None:
     st.markdown("<div class='br-kicker'>Temel veriler</div>", unsafe_allow_html=True)
-    st.number_input("Güncel hisse fiyatı", min_value=0.0, step=1.0, format="%.2f", key="dcf_price")
-    st.number_input("Serbest nakit akışı (son dönem)", min_value=1.0, step=1_000_000.0,
-                    format="%.2f", key="dcf_base_fcf",
-                    help="Otomatik yüklemede sağlayıcının serbest nakit akışı; yoksa finansal tablolardan hesaplanan UFCF.")
-    st.number_input("Seyreltilmiş hisse sayısı", min_value=1.0, step=1_000_000.0,
-                    format="%.2f", key="dcf_shares")
-    st.number_input("Net borç", step=1_000_000.0, format="%.2f", key="dcf_net_debt",
-                    help="Borç eksi nakit. Net nakit pozisyonu negatif girilir.")
+    _grouped_number_input("Güncel hisse fiyatı", "dcf_price", 2)
+    _grouped_number_input(
+        "Serbest nakit akışı (son dönem)", "dcf_base_fcf",
+        help_text="Otomatik yüklemede sağlayıcının serbest nakit akışı; yoksa finansal tablolardan hesaplanan UFCF.",
+    )
+    _grouped_number_input("Seyreltilmiş hisse sayısı", "dcf_shares")
+    _grouped_number_input(
+        "Net borç", "dcf_net_debt",
+        help_text="Borç eksi nakit. Net nakit pozisyonu negatif girilir.",
+    )
     st.divider()
     st.markdown("<div class='br-kicker'>Model varsayımları</div>", unsafe_allow_html=True)
     if include_growth:
@@ -128,10 +160,10 @@ if load:
                     raise ValueError("Pozitif serbest nakit akışı bulunamadı; manuel giriş kullanın.")
                 provider_fcf = float(fcf_series.iloc[-1])
             st.session_state.dcf_quick_package = package
-            st.session_state.dcf_base_fcf = provider_fcf
-            st.session_state.dcf_shares = float(record["Diluted Shares"])
-            st.session_state.dcf_net_debt = float(record["Net Debt"])
-            st.session_state.dcf_price = float(record["Current Price"])
+            _set_grouped_display("dcf_base_fcf", provider_fcf)
+            _set_grouped_display("dcf_shares", float(record["Diluted Shares"]))
+            _set_grouped_display("dcf_net_debt", float(record["Net Debt"]))
+            _set_grouped_display("dcf_price", float(record["Current Price"]), 2)
             eps_growth = float(pd.to_numeric(record.get("EPS Growth"), errors="coerce"))
             if np.isfinite(eps_growth) and eps_growth > 0:
                 st.session_state.dcf_growth = float(np.clip(eps_growth * 75, 1, 50))
@@ -208,10 +240,22 @@ if st.session_state.dcf_mode.startswith("İleri"):
         st.session_state.dcf_net_debt, st.session_state.dcf_midyear,
         st.session_state.dcf_fade,
     ).T
-    sensitivity.index = [f"Terminal %{item*100:.1f}" for item in sensitivity.index]
+    sensitivity.index = [f"%{item*100:.1f}" for item in sensitivity.index]
+    sensitivity.index.name = "Terminal Büyüme"
     sensitivity.columns = [f"WACC %{item*100:.1f}" for item in sensitivity.columns]
-    st.dataframe(sensitivity.style.format(f"{currency} {{:,.2f}}").background_gradient(cmap="RdYlGn"),
-                 width="stretch")
+    sensitivity_display = sensitivity.reset_index()
+    st.dataframe(
+        sensitivity_display.style.format(
+            {column: f"{currency} {{:,.2f}}" for column in sensitivity.columns}
+        ).background_gradient(subset=list(sensitivity.columns), cmap="RdYlGn"),
+        column_config={
+            "Terminal Büyüme": st.column_config.TextColumn(
+                "Terminal Büyüme", width="medium",
+            )
+        },
+        hide_index=True,
+        width="stretch",
+    )
     st.caption("Yeşil hücreler daha yüksek, kırmızı hücreler daha düşük ima edilen değeri gösterir. "
                "Tek bir hücre yerine sonuçların geniş bir varsayım aralığında dayanıklı olup olmadığına bakın.")
 
@@ -245,12 +289,18 @@ if st.session_state.dcf_mode.startswith("İleri"):
         analyst_count = float(pd.to_numeric(record.get("Analyst Count"), errors="coerce"))
         if np.isfinite(analyst_target):
             section("Piyasa · Analist · DCF")
-            comps = st.columns(3)
-            comps[0].metric("Analist Ortalama Hedefi", f"{currency} {analyst_target:,.2f}",
-                            f"{int(analyst_count)} analist" if np.isfinite(analyst_count) else None)
-            comps[1].metric("Güncel Fiyat", f"{currency} {st.session_state.dcf_price:,.2f}")
-            comps[2].metric("DCF Makul Değeri", f"{currency} {result['Per Share']:,.2f}",
-                            f"{result['Upside']:+.1%}")
+            analyst_note = f"{int(analyst_count)} analist" if np.isfinite(analyst_count) else "Konsensüs hedefi"
+            st.markdown(
+                f"""<div class="br-shell market-triad"><div class="br-grid">
+                <div class="br-stat"><span>Analist Ortalama Hedefi</span>
+                <strong>{currency} {analyst_target:,.2f}</strong><small>{analyst_note}</small></div>
+                <div class="br-stat"><span>Güncel Fiyat</span>
+                <strong>{currency} {st.session_state.dcf_price:,.2f}</strong><small>Piyasa fiyatı</small></div>
+                <div class="br-stat"><span>DCF Makul Değeri</span>
+                <strong>{currency} {result['Per Share']:,.2f}</strong><small>{result['Upside']:+.1%}</small></div>
+                </div></div>""",
+                unsafe_allow_html=True,
+            )
 else:
     input_col, output_col = st.columns([.38, .62], gap="large")
     with input_col:

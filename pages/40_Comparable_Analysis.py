@@ -128,7 +128,9 @@ metric_cols[3].metric("Net Kâr Marjı", f"%{target['Net Margin']*100:,.1f}")
 
 view = st.radio("Görünüm", ["Son Dönem", "Son Dönem + İleri"], horizontal=True)
 comparison = _display_table(target_calc, peers, view)
-median = comparison.iloc[1:].select_dtypes("number").median()
+numeric_columns = [column for column in comparison.columns if column != "Company"]
+numeric_peers = comparison.iloc[1:][numeric_columns].apply(pd.to_numeric, errors="coerce")
+median = numeric_peers.median()
 median_row = pd.DataFrame([{**{"Company": "Benzer Şirket Medyanı"}, **median.to_dict()}], index=["MEDYAN"])
 comparison = pd.concat([comparison, median_row])
 
@@ -142,6 +144,33 @@ st.dataframe(comparison.style.format(formats, na_rep="N/M")
              use_container_width=True, height=min(490, 75 + 36 * len(comparison)))
 st.caption(f"Kaynak: {package['source']} · Hedef finansal dönem: {target['Financial Date']} · "
            f"Fiyat tarihi: {target['Price Date']} · Benzer şirket sayısı: {len(peers)}")
+
+section("Benzer Şirket Medyanları")
+median_items = [
+    ("F/K", median.get("P/E"), "x"),
+    ("FD/FAVÖK", median.get("EV/EBITDA"), "x"),
+    ("F/Satışlar", median.get("P/S"), "x"),
+    ("PD/DD", median.get("P/B"), "x"),
+    ("Hasılat Büyümesi", median.get("Revenue Growth"), "%"),
+    ("Net Kâr Marjı", median.get("Net Margin"), "%"),
+]
+median_cards = []
+for label, value, unit in median_items:
+    if pd.isna(value):
+        rendered = "N/M"
+    elif unit == "%":
+        rendered = f"%{float(value)*100:.1f}"
+    else:
+        rendered = f"{float(value):.1f}x"
+    median_cards.append(
+        f"<div class='br-stat'><span>{label}</span><strong>{rendered}</strong></div>"
+    )
+st.markdown(
+    "<div class='br-shell median-panel'><div class='br-grid'>"
+    + "".join(median_cards)
+    + "</div></div>",
+    unsafe_allow_html=True,
+)
 
 section("Çarpanlardan İma Edilen Fiyat")
 if implied.empty:
