@@ -112,6 +112,13 @@ target_calc = calculate_multiples(target.to_frame().T).iloc[0]
 target_calc.name = target.name
 target_calc["P/S"], target_calc["P/B"] = target["P/S"], target["P/B"]
 implied = comparable_implied_prices(target_calc, peers)
+implied = implied.rename(columns={
+    "Benzer Medyanı": "Peer Median",
+    "İma Edilen Fiyat": "Implied Price",
+    "Güncel Fiyat": "Current Price",
+    "Prim / İskonto": "Premium / Discount",
+})
+implied.index.name = "Multiple"
 currency = str(target["Currency"])
 
 section(f"{target['Company']} ({target.name})")

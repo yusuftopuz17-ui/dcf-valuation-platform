@@ -59,6 +59,24 @@ def _grouped_number_input(label: str, key: str, decimals: int = 0, help_text: st
     return float(st.session_state[key])
 
 
+def _normalize_calculation_schema(scenarios: pd.DataFrame, schedule: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Accept both legacy Turkish and current English calculation schemas during cloud hot reloads."""
+    scenarios = scenarios.rename(columns={
+        "FCF Büyümesi": "FCF Growth",
+        "Hisse Başı Değer": "Value Per Share",
+        "Fiyat Farkı": "Upside / Downside",
+    }).rename(index={"Ayı": "Bear", "Baz": "Base", "Boğa": "Bull"})
+    scenarios.index.name = "Scenario"
+    schedule = schedule.rename(columns={
+        "Yıl": "Year",
+        "Büyüme": "Growth",
+        "Serbest Nakit Akışı": "Free Cash Flow",
+        "İskonto Faktörü": "Discount Factor",
+        "Bugünkü Değer": "Present Value",
+    })
+    return scenarios, schedule
+
+
 def _result_card(result: dict, company: str, currency: str) -> None:
     upside = result["Upside"]
     tone = "br-danger" if np.isfinite(upside) and upside < 0 else ""
@@ -201,6 +219,9 @@ if st.session_state.dcf_mode.startswith("Forward"):
         st.session_state.dcf_net_debt, st.session_state.dcf_price or result["Per Share"],
         st.session_state.dcf_midyear, st.session_state.dcf_fade,
     )
+    scenarios, normalized_schedule = _normalize_calculation_schema(
+        scenarios, result["Schedule"].copy(),
+    )
     scenario_spread = scenarios["Value Per Share"].max() - scenarios["Value Per Share"].min()
     spread_ratio = scenario_spread / max(st.session_state.dcf_price, result["Per Share"], 1)
     sensitivity_label = "Low" if spread_ratio < .30 else ("Moderate" if spread_ratio < .75 else "High")
@@ -268,7 +289,7 @@ if st.session_state.dcf_mode.startswith("Forward"):
             )
 
     section("Present Value Breakdown")
-    schedule = result["Schedule"].copy()
+    schedule = normalized_schedule
     pv_chart = schedule.set_index("Year")[["Present Value"]]
     pv_chart.index = [f"Year {year}" for year in pv_chart.index]
     pv_chart.loc["Terminal Value"] = result["PV Terminal"]
