@@ -7,7 +7,8 @@ import streamlit as st
 from valuation_platform.ccv import ValuationProject
 
 
-METHODS = ["Comparable Companies", "DCF", "Precedent Transactions"]
+METHODS = ["Comparable Companies", "DCF"]
+METHOD_LABELS = {"Comparable Companies": "Benzer Şirketler", "DCF": "DCF"}
 
 
 def initialize_project() -> ValuationProject:
@@ -44,14 +45,14 @@ def render_method_tabs() -> None:
     project = get_project()
     if not project.selected_method:
         return
-    columns = st.columns([1, 1, 1, .65])
-    for column, method in zip(columns[:3], METHODS):
+    columns = st.columns([1, 1, .65])
+    for column, method in zip(columns[:2], METHODS):
         active = project.selected_method == method
-        if column.button(("● " if active else "") + method, key=f"method_tab_{method}",
+        if column.button(("● " if active else "") + METHOD_LABELS[method], key=f"method_tab_{method}",
                          type="primary" if active else "secondary", use_container_width=True):
             select_method(method)
             st.rerun()
-    if columns[3].button("Yöntemleri Gör", use_container_width=True):
+    if columns[2].button("Araçları Gör", use_container_width=True):
         project.selected_method = None
         save_project(project)
         st.rerun()

@@ -17,42 +17,35 @@ def test_method_selection_and_ccv_setup_start_without_exception():
     select = next(button for button in test.button if button.label == "Yöntemi Seç")
     select.click().run()
     assert not test.exception
-    assert any(button.label == "● Comparable Companies" for button in test.button)
+    assert any(button.label == "● Benzer Şirketler" for button in test.button)
 
 
-def test_public_ccv_run_button_explains_missing_confirmation():
+def test_comparable_tool_opens_with_quick_analysis_controls():
     from streamlit.testing.v1 import AppTest
     app = Path(__file__).resolve().parents[1] / "app.py"
     test = AppTest.from_file(str(app), default_timeout=20).run()
     next(button for button in test.button if button.label == "Yöntemi Seç").click().run()
-    next(button for button in test.button if button.label == "Halka Açık Şirketi Seç").click().run()
-    run = next(button for button in test.button if button.label == "CCV Analizini Çalıştır")
-    assert not run.disabled
-    run.click().run()
-    assert any("Hedef şirket henüz onaylanmadı" in error.value for error in test.error)
+    assert any(button.label == "Analiz Et" for button in test.button)
+    assert any(item.label == "Borsa sembolü" for item in test.text_input)
     assert not test.exception
 
 
-def test_msft_example_prefills_public_setup():
+def test_msft_preset_is_available_in_comparable_tool():
     from streamlit.testing.v1 import AppTest
     app = Path(__file__).resolve().parents[1] / "app.py"
     test = AppTest.from_file(str(app), default_timeout=20).run()
     next(button for button in test.button if button.label == "Yöntemi Seç").click().run()
-    next(button for button in test.button if button.label == "Halka Açık Şirketi Seç").click().run()
-    next(button for button in test.button if button.label == "Microsoft (MSFT) örneğini doldur").click().run()
-    assert next(item for item in test.text_input if item.label == "Şirket adı veya sembol").value == "MSFT"
-    assert any("Microsoft Corporation (MSFT)" in success.value for success in test.success)
+    assert next(item for item in test.text_input if item.label == "Borsa sembolü").value == "MSFT"
+    assert any(button.label == "MSFT" for button in test.button)
     assert not test.exception
 
 
-def test_canva_example_prefills_private_setup_without_financial_fabrication():
+def test_dcf_tool_opens_with_forward_and_reverse_tabs():
     from streamlit.testing.v1 import AppTest
     app = Path(__file__).resolve().parents[1] / "app.py"
     test = AppTest.from_file(str(app), default_timeout=20).run()
-    next(button for button in test.button if button.label == "Yöntemi Seç").click().run()
-    next(button for button in test.button if button.label == "Özel Şirketi Seç").click().run()
-    next(button for button in test.button if button.label == "Canva özel şirket profil örneğini doldur").click().run()
-    assert next(item for item in test.text_input if item.label == "Şirket adı").value == "Canva"
-    assert next(item for item in test.text_input if item.label.startswith("Son yıllık hasılat")).value == ""
-    assert any("parasal alanlar boş bırakıldı" in info.value for info in test.info)
+    selects = [button for button in test.button if button.label == "Yöntemi Seç"]
+    selects[1].click().run()
+    assert any(button.label == "Verileri Yükle" for button in test.button)
+    assert [tab.label for tab in test.tabs] == ["İleri DCF · Makul Değer", "Ters DCF · İma Edilen Büyüme"]
     assert not test.exception

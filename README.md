@@ -1,49 +1,30 @@
 # DCF Engine + Comparable Company Valuation Platform
 
-Kurumsal görünümlü, çok yöntemli bir Streamlit değerleme uygulaması. Açılışta kullanıcı Comparable Company Valuation (CCV), DCF veya Emsal İşlemler yöntemini seçer. Bu sürümde CCV uçtan uca uygulanmıştır; mevcut DCF motoru kod tabanında korunmuş, yeni DCF ve Emsal İşlemler çalışma alanları sonraki aşama için açıkça etiketlenmiştir.
+Kurumsal görünümlü, iki araçlı bir Streamlit değerleme uygulaması. Açılışta kullanıcı **Benzer Şirket Analizi** veya **İleri/Ters DCF** aracını seçer. Her iki araç da gerçek piyasa verisiyle çalışır ve manuel varsayımlara izin verir.
 
 Uygulama yatırım bankacılığı, özel sermaye, equity research, kurumsal finans ve üniversite çalışmalarında kullanılmak üzere tasarlanmıştır. Sonuçlar yatırım tavsiyesi değildir.
 
 ## Başlıca özellikler
 
-- Kalıcı yatay yöntem sekmeleri ve oturum boyunca bağımsız proje durumu
-- Halka açık ve özel şirket için ayrı CCV kurulum akışları
-- Şirket adı/sembol araması ve belirsiz sonuçlarda zorunlu kullanıcı onayı
-- Yahoo Finance sektör taramasıyla gerçek aday keşfi; manuel dahil/hariç/kilit kontrolleri
-- Sektör, alt sektör, iş modeli, müşteri, coğrafya, ölçek, büyüme, kârlılık ve hasılat modeli puanlaması
-- Normalize edilmiş Metrics & Boundaries sınırları ve para birimi uyumsuzluğu kontrolleri
-- EV/Revenue, EV/EBITDA, EV/EBIT ve P/E; negatif paydalarda N/M
-- IQR, winsorizasyon, z-skoru veya aykırı değer temizlememe
-- Medyan esaslı ima edilen işletme, özsermaye ve hisse başına değer aralıkları
-- CCV’ye özel Yönetici Özeti, Tarihsel Performans, Benzer Şirketler ve Rapor Merkezi
-- CCV’ye özel Excel, CSV ZIP ve PDF çıktıları
-- Hedef şirket ve benzer şirket sembollerini değiştirme
-- Yıl bazında hasılat büyümesi ve EBITDA marjı girişi
-- Vergi, D&A, Capex ve işletme sermayesi sürücüleri
-- CAPM özsermaye maliyeti ve vergi sonrası borç maliyeti
-- Mevcut veya hedef sermaye yapısıyla WACC
-- Sürekli büyüme ve çıkış EV/EBITDA DCF yöntemleri
-- EV/Hasılat, EV/EBITDA, EV/EBIT, F/K, P/B ve Fiyat/Satışlar
-- IQR, z-skoru, MAD ve manuel hariç tutma
-- Üç profesyonel duyarlılık ısı haritası
-- Ayı, baz ve boğa senaryoları
-- Gerçek duyarlılık ve yüzdelik sonuçlarına dayanan football field
-- Kural bazlı otomatik finansal yorumlar; haricî yapay zekâ API'si gerekmez
-- Excel, CSV, PDF ve PowerPoint indirmeleri
+- Yahoo Finance sektör taramasıyla otomatik benzer şirket keşfi ve manuel sembol girişi
+- Son dönem / ileri görünüm; F/K, FD/FAVÖK, F/Satışlar ve PD/DD
+- Benzer medyanları, renkli göreli karşılaştırma ve dört yöntemli ima edilen fiyat
+- Harmanlanmış orta nokta, değerleme aralığı ve kural bazlı analist yorumu
+- İleri DCF ile makul değer; ters DCF ile piyasanın ima ettiği FCF büyümesi
+- 5/10 yıl, büyüme fade'i, yıl ortası iskonto ve açık net borç köprüsü
+- Ayı, baz ve boğa senaryoları; 9×9 WACC / terminal büyüme duyarlılığı
+- Yıllık nakit akışı bugünkü değer tablosu ve terminal değer yoğunlaşma uyarısı
+- Varsa analist konsensüs hedefiyle piyasa/DCF karşılaştırması
+- Paylaşılabilir URL varsayımları ve indirilebilir JSON analiz
 - Koyu siyah/füme kurumsal tasarım
 - Pahalı veri indirmelerinde `st.cache_data` ve açık çalıştırma düğmesi
-- Özel şirketler için normalizasyon kayıtları, benzer şirketlerden kaldıraçsız/kaldıraçlı beta ve ayrı risk düzeltmesi
-- Eksik veri durumunda uydurma parasal değer yerine yalnızca doğrulanabilir oran ve kıyas sonuçları
 
-## Aktif CCV sayfaları
+## Aktif araçlar
 
-1. **CCV Kurulumu:** Şirket türü, profil, gerçek şirket çözümleme, aday keşfi, sınırlar ve ağırlıklar.
-2. **Yönetici Özeti:** Hedef profili, peer güveni, ana çarpan ve değer aralıkları.
-3. **Tarihsel Performans:** Halka açık şirket verileri veya özel şirket veri girişi; DCF tahmini içermez.
-4. **Benzer Şirketler:** Sıralama, reddedilenler, çarpanlar, istatistikler, aykırı değerler ve football field.
-5. **Rapor Merkezi:** CCV’ye özel önizleme, Excel, CSV ve PDF.
+1. **Benzer Şirket Analizi:** Hedef sembol, otomatik/manüel benzerler, karşılaştırma tablosu ve ima edilen fiyatlar.
+2. **İleri ve Ters DCF:** Otomatik temel veriler veya manuel giriş, senaryolar, duyarlılık ve bugünkü değer köprüsü.
 
-Eski DCF sayfaları ve özel şirket DCF motoru silinmemiştir. Yeni yöntem navigasyonunda bilinçli olarak gizlidir ve sonraki geliştirme aşamasında DCF sekmesine bağlanacaktır.
+Gelişmiş eski model ve raporlama modülleri kod tabanında geriye dönük uyumluluk için korunur; kullanıcı navigasyonunda yalnızca bu iki hızlı araç görünür. Kamuya açık referans özelliklerinin eşleme belgesi: [`docs/BASIS_FEATURE_MAP.md`](docs/BASIS_FEATURE_MAP.md).
 
 ## CCV benzer şirket metodolojisi
 
@@ -133,11 +114,11 @@ Tarayıcıda `http://localhost:8501` açılır.
 
 ## Kullanım
 
-1. Sol panelde hedef şirketi ve benzer şirketleri girin.
-2. Tahmin dönemi, büyüme, marj, WACC ve terminal değer varsayımlarını kontrol edin.
-3. **Değerlemeyi Çalıştır** düğmesine basın.
-4. Sayfalar arasında gezinerek tarihsel analiz, tahmin, DCF, benzer şirketler ve duyarlılıkları inceleyin.
-5. Rapor Merkezi'nden çıktıları indirin.
+1. Açılışta **Benzer Şirket Analizi** veya **DCF** aracını seçin.
+2. Şirket sembolünü girip **Analiz Et** ya da **Verileri Yükle** düğmesine basın.
+3. Otomatik gelen şirket verilerini ve varsayımları kontrol edin.
+4. Benzer şirket medyanlarını veya DCF senaryo/duyarlılık sonuçlarını inceleyin.
+5. DCF varsayımlarını bağlantıya yazabilir veya analizi JSON olarak indirebilirsiniz.
 
 Görsel bir sekme değişikliği veya tablo sıralaması finansal verileri yeniden indirmez. Yeni bir şirket/varsayım seti uygulamak için çalıştırma düğmesine tekrar basılır.
 
@@ -154,7 +135,8 @@ Uygulama anahtar gerektirmeyen Yahoo Finance yolunu kullanır. Kurumsal ağlar v
 
 ```text
 ├── app.py
-├── pages/                 # Yöntem seçimi, CCV sayfaları, yer tutucular ve korunmuş eski DCF sayfaları
+├── pages/                 # Yöntem seçimi, aktif hızlı araçlar ve korunmuş eski sayfalar
+├── docs/                  # Kamuya açık referans özellik eşlemesi
 ├── src/                   # UI, cache, grafikler ve raporlama
 ├── valuation_platform/    # Finansal hesap motoru
 ├── assets/styles.css      # Siyah/füme tasarım sistemi
