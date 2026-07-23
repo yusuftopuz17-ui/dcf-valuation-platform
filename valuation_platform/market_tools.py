@@ -10,7 +10,7 @@ def project_fcf(base_fcf: float, growth: float, years: int, terminal_growth: flo
                 fade_growth: bool) -> np.ndarray:
     """Project free cash flow, optionally fading growth toward the terminal rate."""
     if base_fcf <= 0 or years not in {5, 10}:
-        raise ValueError("Başlangıç serbest nakit akışı pozitif, dönem 5 veya 10 yıl olmalıdır.")
+        raise ValueError("Base free cash flow must be positive and the forecast period must be 5 or 10 years.")
     rates = np.linspace(growth, terminal_growth, years) if fade_growth else np.repeat(growth, years)
     return base_fcf * np.cumprod(1 + rates)
 
@@ -21,9 +21,9 @@ def forward_dcf(base_fcf: float, growth: float, terminal_growth: float, wacc: fl
                 fade_growth: bool = False) -> dict:
     """Calculate a perpetuity-growth DCF with an explicit EV-to-equity bridge."""
     if wacc <= terminal_growth:
-        raise ValueError("WACC terminal büyüme oranından büyük olmalıdır.")
+        raise ValueError("WACC must be greater than the terminal growth rate.")
     if shares <= 0:
-        raise ValueError("Hisse sayısı pozitif olmalıdır.")
+        raise ValueError("Diluted shares outstanding must be positive.")
     flows = project_fcf(base_fcf, growth, years, terminal_growth, fade_growth)
     periods = np.arange(1, years + 1, dtype=float) - (0.5 if mid_year else 0.0)
     factors = 1 / (1 + wacc) ** periods
@@ -35,8 +35,8 @@ def forward_dcf(base_fcf: float, growth: float, terminal_growth: float, wacc: fl
     per_share = equity_value / shares
     upside = per_share / current_price - 1 if current_price and current_price > 0 else np.nan
     schedule = pd.DataFrame({
-        "Yıl": np.arange(1, years + 1), "Büyüme": np.r_[flows[0] / base_fcf - 1, flows[1:] / flows[:-1] - 1],
-        "Serbest Nakit Akışı": flows, "İskonto Faktörü": factors, "Bugünkü Değer": pv_flows,
+        "Year": np.arange(1, years + 1), "Growth": np.r_[flows[0] / base_fcf - 1, flows[1:] / flows[:-1] - 1],
+        "Free Cash Flow": flows, "Discount Factor": factors, "Present Value": pv_flows,
     })
     return {
         "Enterprise Value": enterprise_value, "Net Debt": net_debt, "Equity Value": equity_value,
@@ -79,7 +79,7 @@ def reverse_dcf_sensitivity(target_price: float, base_fcf: float, terminal_growt
                                        net_debt, mid_year, fade_growth))
         values.append(row)
     return pd.DataFrame(values, index=pd.Index(rates, name="WACC"),
-                        columns=pd.Index(terminals, name="Terminal Büyüme"))
+                        columns=pd.Index(terminals, name="Terminal Growth"))
 
 
 def dcf_sensitivity(base_fcf: float, growth: float, terminal_growth: float, wacc: float,
@@ -96,22 +96,22 @@ def dcf_sensitivity(base_fcf: float, growth: float, terminal_growth: float, wacc
                                    None, mid_year, fade_growth)["Per Share"])
         values.append(row)
     return pd.DataFrame(values, index=pd.Index(rates, name="WACC"),
-                        columns=pd.Index(growths, name="Terminal Büyüme"))
+                        columns=pd.Index(growths, name="Terminal Growth"))
 
 
 def scenario_table(base_fcf: float, growth: float, terminal_growth: float, wacc: float,
                    years: int, shares: float, net_debt: float, current_price: float,
                    mid_year: bool, fade_growth: bool) -> pd.DataFrame:
     """Calculate transparent bear/base/bull cases."""
-    cases = [("Ayı", growth - .06, wacc + .02), ("Baz", growth, wacc), ("Boğa", growth + .06, wacc - .02)]
+    cases = [("Bear", growth - .06, wacc + .02), ("Base", growth, wacc), ("Bull", growth + .06, wacc - .02)]
     rows = []
     for name, case_growth, case_wacc in cases:
         case_wacc = max(case_wacc, terminal_growth + .005)
         result = forward_dcf(base_fcf, case_growth, terminal_growth, case_wacc, years, shares,
                              net_debt, current_price, mid_year, fade_growth)
-        rows.append({"Senaryo": name, "FCF Büyümesi": case_growth, "WACC": case_wacc,
-                     "Hisse Başı Değer": result["Per Share"], "Fiyat Farkı": result["Upside"]})
-    return pd.DataFrame(rows).set_index("Senaryo")
+        rows.append({"Scenario": name, "FCF Growth": case_growth, "WACC": case_wacc,
+                     "Value Per Share": result["Per Share"], "Upside / Downside": result["Upside"]})
+    return pd.DataFrame(rows).set_index("Scenario")
 
 
 def comparable_implied_prices(target: pd.Series, peers: pd.DataFrame) -> pd.DataFrame:
@@ -141,6 +141,6 @@ def comparable_implied_prices(target: pd.Series, peers: pd.DataFrame) -> pd.Data
         equity = value - float(target.get("Net Debt", 0)) if is_enterprise else value
         price = equity / shares
         current = float(target.get("Current Price", np.nan))
-        rows.append({"Çarpan": multiple, "Benzer Medyanı": median, "İma Edilen Fiyat": price,
-                     "Güncel Fiyat": current, "Prim / İskonto": price / current - 1})
-    return pd.DataFrame(rows).set_index("Çarpan") if rows else pd.DataFrame()
+        rows.append({"Multiple": multiple, "Peer Median": median, "Implied Price": price,
+                     "Current Price": current, "Premium / Discount": price / current - 1})
+    return pd.DataFrame(rows).set_index("Multiple") if rows else pd.DataFrame()

@@ -8,7 +8,7 @@ from valuation_platform.ccv import ValuationProject
 
 
 METHODS = ["Comparable Companies", "DCF"]
-METHOD_LABELS = {"Comparable Companies": "Benzer Şirketler", "DCF": "DCF"}
+METHOD_LABELS = {"Comparable Companies": "Comparable Companies", "DCF": "DCF"}
 
 
 def initialize_project() -> ValuationProject:
@@ -52,7 +52,7 @@ def render_method_tabs() -> None:
                          type="primary" if active else "secondary", use_container_width=True):
             select_method(method)
             st.rerun()
-    if columns[2].button("Araçları Gör", use_container_width=True):
+    if columns[2].button("View Methods", use_container_width=True):
         project.selected_method = None
         save_project(project)
         st.rerun()
@@ -62,8 +62,8 @@ def method_card(title: str, description: str, use_cases: str, inputs: str, metho
     with st.container(border=True):
         st.markdown(f"### {title}")
         st.write(description)
-        st.caption(f"**Uygun kullanım:** {use_cases}")
-        st.caption(f"**Ana girdiler:** {inputs}")
-        if st.button("Yöntemi Seç", key=f"select_{method}", type="primary", use_container_width=True):
+        st.caption(f"**Best suited for:** {use_cases}")
+        st.caption(f"**Key inputs:** {inputs}")
+        if st.button("Select Method", key=f"select_{method}", type="primary", use_container_width=True):
             select_method(method)
             st.rerun()

@@ -30,80 +30,79 @@ def _money(value: float, currency: str, decimals: int = 1) -> str:
     return f"{currency} {value:,.2f}"
 
 
-def _tr_number(value: float, decimals: int = 0) -> str:
-    """Format editable values with Turkish thousands and decimal separators."""
-    formatted = f"{float(value):,.{decimals}f}"
-    return formatted.replace(",", "\u0000").replace(".", ",").replace("\u0000", ".")
+def _grouped_number(value: float, decimals: int = 0) -> str:
+    """Format editable values with comma thousands separators."""
+    return f"{float(value):,.{decimals}f}"
 
 
-def _parse_tr_number(value: str) -> float:
-    """Parse the Turkish-formatted values rendered by `_tr_number`."""
-    cleaned = value.strip().replace(" ", "").replace(".", "").replace(",", ".")
+def _parse_grouped_number(value: str) -> float:
+    """Parse values rendered by `_grouped_number`."""
+    cleaned = value.strip().replace(" ", "").replace(",", "")
     return float(cleaned)
 
 
 def _set_grouped_display(key: str, value: float, decimals: int = 0) -> None:
     st.session_state[key] = float(value)
-    st.session_state[f"{key}_display"] = _tr_number(value, decimals)
+    st.session_state[f"{key}_display"] = _grouped_number(value, decimals)
 
 
 def _grouped_number_input(label: str, key: str, decimals: int = 0, help_text: str | None = None) -> float:
     """Use a text field because HTML number inputs cannot show thousands groups."""
     display_key = f"{key}_display"
-    st.session_state.setdefault(display_key, _tr_number(st.session_state[key], decimals))
+    st.session_state.setdefault(display_key, _grouped_number(st.session_state[key], decimals))
     raw = st.text_input(label, key=display_key, help=help_text)
     try:
-        parsed = _parse_tr_number(raw)
+        parsed = _parse_grouped_number(raw)
         st.session_state[key] = parsed
     except ValueError:
-        st.error(f"{label} geçerli bir sayı olmalıdır.")
+        st.error(f"{label} must be a valid number.")
     return float(st.session_state[key])
 
 
 def _result_card(result: dict, company: str, currency: str) -> None:
     upside = result["Upside"]
     tone = "br-danger" if np.isfinite(upside) and upside < 0 else ""
-    direction = "aşağı yönlü fark" if np.isfinite(upside) and upside < 0 else "yukarı potansiyel"
-    delta = f"%{abs(upside)*100:.1f} {direction}" if np.isfinite(upside) else "Fiyat girilmedi"
+    direction = "downside" if np.isfinite(upside) and upside < 0 else "upside"
+    delta = f"{abs(upside)*100:.1f}% {direction}" if np.isfinite(upside) else "No current price"
     st.markdown(
         f"""<div class="br-result {tone}">
         <div class="br-kicker">{html.escape(company)}</div>
-        <div class="br-note">DCF ile hesaplanan özsermaye değeri</div>
+        <div class="br-note">DCF-implied equity value</div>
         <div class="br-big">{_money(result['Equity Value'], currency)}</div>
         <div class="br-grid">
-          <div class="br-stat"><span>Hisse başına</span><strong>{currency} {result['Per Share']:,.2f}</strong></div>
-          <div class="br-stat"><span>Güncel fiyat</span><strong>{currency} {(result['Current Price'] or 0):,.2f}</strong></div>
-          <div class="br-stat"><span>Fiyat farkı</span><strong>{delta}</strong></div>
+          <div class="br-stat"><span>Per Share</span><strong>{currency} {result['Per Share']:,.2f}</strong></div>
+          <div class="br-stat"><span>Current Price</span><strong>{currency} {(result['Current Price'] or 0):,.2f}</strong></div>
+          <div class="br-stat"><span>Price Difference</span><strong>{delta}</strong></div>
         </div>
-        <p class="br-note" style="margin-top:18px">Terminal değer payı %{result['Terminal Share']*100:.1f}.
-        İşletme değerinden net borç çıkarılarak özsermaye değerine ulaşılmıştır.</p>
+        <p class="br-note" style="margin-top:18px">Terminal value represents {result['Terminal Share']*100:.1f}% of enterprise value.
+        Equity value equals enterprise value less net debt.</p>
         </div>""",
         unsafe_allow_html=True,
     )
 
 
 def _assumption_inputs(include_growth: bool) -> None:
-    st.markdown("<div class='br-kicker'>Temel veriler</div>", unsafe_allow_html=True)
-    _grouped_number_input("Güncel hisse fiyatı", "dcf_price", 2)
+    st.markdown("<div class='br-kicker'>Core Data</div>", unsafe_allow_html=True)
+    _grouped_number_input("Current Share Price", "dcf_price", 2)
     _grouped_number_input(
-        "Serbest nakit akışı (son dönem)", "dcf_base_fcf",
-        help_text="Otomatik yüklemede sağlayıcının serbest nakit akışı; yoksa finansal tablolardan hesaplanan UFCF.",
+        "Free Cash Flow (Latest Period)", "dcf_base_fcf",
+        help_text="Uses provider free cash flow when available; otherwise calculates unlevered free cash flow from the financial statements.",
     )
-    _grouped_number_input("Seyreltilmiş hisse sayısı", "dcf_shares")
+    _grouped_number_input("Diluted Shares Outstanding", "dcf_shares")
     _grouped_number_input(
-        "Net borç", "dcf_net_debt",
-        help_text="Borç eksi nakit. Net nakit pozisyonu negatif girilir.",
+        "Net Debt", "dcf_net_debt",
+        help_text="Debt less cash. Enter a net cash position as a negative amount.",
     )
     st.divider()
-    st.markdown("<div class='br-kicker'>Model varsayımları</div>", unsafe_allow_html=True)
+    st.markdown("<div class='br-kicker'>Model Assumptions</div>", unsafe_allow_html=True)
     if include_growth:
-        st.slider("FCF büyümesi (1–5/10. yıllar) %", 0.0, 50.0, step=.5, key="dcf_growth")
-    st.slider("Terminal büyüme %", 0.0, 5.0, step=.1, key="dcf_terminal")
-    st.slider("İskonto oranı (WACC) %", 1.0, 25.0, step=.5, key="dcf_wacc")
-    st.radio("Tahmin dönemi", [5, 10], horizontal=True, key="dcf_years")
-    st.toggle("Büyümeyi terminal orana yaklaştır", key="dcf_fade",
-              help="Büyüme tahmin dönemi boyunca terminal orana doğrusal olarak yaklaşır.")
-    st.toggle("Yıl ortası iskonto", key="dcf_midyear")
+        st.slider("FCF Growth (Years 1–5/10) %", 0.0, 50.0, step=.5, key="dcf_growth")
+    st.slider("Terminal Growth Rate %", 0.0, 5.0, step=.1, key="dcf_terminal")
+    st.slider("Discount Rate (WACC) %", 1.0, 25.0, step=.5, key="dcf_wacc")
+    st.radio("Forecast Period", [5, 10], horizontal=True, key="dcf_years")
+    st.toggle("Fade Growth Toward the Terminal Rate", key="dcf_fade",
+              help="Linearly fades the forecast growth rate toward the terminal rate over the explicit forecast period.")
+    st.toggle("Mid-Year Discounting", key="dcf_midyear")
 
 
 defaults = {
@@ -111,7 +110,7 @@ defaults = {
     "dcf_base_fcf": 100_000_000_000.0, "dcf_shares": 7_500_000_000.0,
     "dcf_net_debt": 0.0, "dcf_price": 0.0, "dcf_growth": 10.0,
     "dcf_terminal": 2.5, "dcf_wacc": 9.0, "dcf_years": 5,
-    "dcf_midyear": True, "dcf_fade": False, "dcf_mode": "İleri DCF — Makul Değer",
+    "dcf_midyear": True, "dcf_fade": False, "dcf_mode": "Forward DCF — Fair Value",
 }
 for key, value in defaults.items():
     st.session_state.setdefault(key, value)
@@ -133,23 +132,18 @@ if not st.session_state.get("dcf_query_loaded"):
                 pass
     st.session_state.dcf_query_loaded = True
 
-page_header("DCF Değerleme Laboratuvarı",
-            "Bir şirketin makul değerini hesaplayın veya piyasa fiyatının gerektirdiği büyümeyi tersine çözün.")
-st.radio("Analiz modu", ["İleri DCF — Makul Değer", "Ters DCF — İma Edilen Büyüme"],
+page_header("DCF Valuation Laboratory",
+            "Estimate a company's fair value or solve for the growth implied by its market price.")
+st.radio("Analysis Mode", ["Forward DCF — Fair Value", "Reverse DCF — Implied Growth"],
          horizontal=True, key="dcf_mode", label_visibility="collapsed")
 
 search_left, search_right = st.columns([4, 1])
-search_left.text_input("Borsa sembolü", key="dcf_quick_ticker", placeholder="Örn. AAPL")
-load = search_right.button("Verileri Yükle", type="primary", width="stretch")
-presets = st.columns([.7, .7, .7, 4])
-for column, ticker in zip(presets[:3], ["AAPL", "GOOGL", "MSFT"]):
-    if column.button(ticker, key=f"dcf_preset_{ticker}", width="stretch"):
-        st.session_state.dcf_quick_ticker = ticker
-        st.rerun()
+search_left.text_input("Ticker Symbol", key="dcf_quick_ticker", placeholder="e.g., AAPL")
+load = search_right.button("Load Data", type="primary", width="stretch")
 
 if load:
     try:
-        with st.spinner("Piyasa ve finansal veriler alınıyor..."):
+        with st.spinner("Retrieving market and financial data..."):
             package = company_record(st.session_state.dcf_quick_ticker.strip().upper())
             record = package["record"]
             provider_fcf = float(pd.to_numeric(record.get("Free Cash Flow"), errors="coerce"))
@@ -157,7 +151,7 @@ if load:
                 fcf_series = historical_metrics(package["historical"])["Free Cash Flow"].replace(
                     [np.inf, -np.inf], np.nan).dropna()
                 if fcf_series.empty or fcf_series.iloc[-1] <= 0:
-                    raise ValueError("Pozitif serbest nakit akışı bulunamadı; manuel giriş kullanın.")
+                    raise ValueError("No positive free cash flow was available; use manual input.")
                 provider_fcf = float(fcf_series.iloc[-1])
             st.session_state.dcf_quick_package = package
             _set_grouped_display("dcf_base_fcf", provider_fcf)
@@ -168,23 +162,23 @@ if load:
             if np.isfinite(eps_growth) and eps_growth > 0:
                 st.session_state.dcf_growth = float(np.clip(eps_growth * 75, 1, 50))
     except Exception as exc:
-        st.error(f"Veriler yüklenemedi: {exc}")
+        st.error(f"Data could not be loaded: {exc}")
 
 package = st.session_state.dcf_quick_package
 record = package["record"] if package else {}
 company = str(record.get("Company") or st.session_state.dcf_quick_ticker.upper())
 currency = str(record.get("Currency") or "USD")
 if package:
-    st.caption(f"{company} · Canlıya yakın sağlayıcı verisi · Fiyat tarihi {record['Price Date']} · "
-               f"Finansal dönem {record['Financial Date']} · Kaynak Yahoo Finance")
+    st.caption(f"{company} · Near-live provider data · Price date: {record['Price Date']} · "
+               f"Financial period: {record['Financial Date']} · Source: Yahoo Finance")
 else:
-    st.info("Sembolü yükleyin veya aşağıdaki alanlara kendi verilerinizi girin. Sonuçlar varsayımlar değiştikçe anında güncellenir.")
+    st.info("Load a ticker or enter your own data below. Results update immediately as assumptions change.")
 
 growth = st.session_state.dcf_growth / 100
 terminal = st.session_state.dcf_terminal / 100
 rate = st.session_state.dcf_wacc / 100
 
-if st.session_state.dcf_mode.startswith("İleri"):
+if st.session_state.dcf_mode.startswith("Forward"):
     input_col, output_col = st.columns([.38, .62], gap="large")
     with input_col:
         with st.container(border=True):
@@ -197,7 +191,7 @@ if st.session_state.dcf_mode.startswith("İleri"):
             st.session_state.dcf_midyear, st.session_state.dcf_fade,
         )
     except Exception as exc:
-        output_col.error(f"DCF hesaplanamadı: {exc}")
+        output_col.error(f"DCF could not be calculated: {exc}")
         footer()
         st.stop()
 
@@ -207,33 +201,33 @@ if st.session_state.dcf_mode.startswith("İleri"):
         st.session_state.dcf_net_debt, st.session_state.dcf_price or result["Per Share"],
         st.session_state.dcf_midyear, st.session_state.dcf_fade,
     )
-    scenario_spread = scenarios["Hisse Başı Değer"].max() - scenarios["Hisse Başı Değer"].min()
+    scenario_spread = scenarios["Value Per Share"].max() - scenarios["Value Per Share"].min()
     spread_ratio = scenario_spread / max(st.session_state.dcf_price, result["Per Share"], 1)
-    sensitivity_label = "Düşük" if spread_ratio < .30 else ("Orta" if spread_ratio < .75 else "Yüksek")
+    sensitivity_label = "Low" if spread_ratio < .30 else ("Moderate" if spread_ratio < .75 else "High")
 
     with output_col:
         if result["Terminal Share"] > .75:
-            st.warning(f"Terminal değer toplam işletme değerinin %{result['Terminal Share']*100:.1f}'ini oluşturuyor; "
-                       "model uzun vadeli varsayımlara yüksek derecede duyarlı.")
-        st.info(f"{sensitivity_label} duyarlılık · Ayı/boğa farkı güncel fiyatın %{spread_ratio*100:.0f}'i")
+            st.warning(f"Terminal value represents {result['Terminal Share']*100:.1f}% of enterprise value; "
+                       "the model is highly sensitive to long-term assumptions.")
+        st.info(f"{sensitivity_label} sensitivity · Bear/bull spread equals {spread_ratio*100:.0f}% of the current price")
         _result_card(result, company, currency)
         if np.isfinite(result["Upside"]):
             if result["Upside"] >= 0:
                 safety = 1 - st.session_state.dcf_price / result["Per Share"]
-                st.success(f"Güvenlik marjı: %{safety*100:.1f}")
+                st.success(f"Margin of safety: {safety*100:.1f}%")
                 st.progress(float(np.clip(safety, 0, 1)))
             else:
                 premium = st.session_state.dcf_price / result["Per Share"] - 1
-                st.error(f"Hisse, bu varsayımlardaki DCF değerinin %{premium*100:.1f} üzerinde işlem görüyor.")
+                st.error(f"The shares trade {premium*100:.1f}% above the DCF value under these assumptions.")
                 st.progress(float(np.clip(premium, 0, 1)))
-        verdict = ("Model fiyatın üzerinde değer üretiyor; büyüme ve WACC varsayımlarının dayanıklılığını "
-                   "duyarlılık tablosunda kontrol edin." if result["Upside"] >= 0 else
-                   "Piyasa, modelinizden daha yüksek büyüme veya daha düşük risk fiyatlıyor. Bu primin "
-                   "operasyonel verilerle savunulması gerekir.")
-        st.markdown(f"<div class='br-verdict'><b>Bu ne anlama geliyor?</b><br>{verdict}</div>",
+        verdict = ("The model produces a value above the market price. Test the resilience of the growth and "
+                   "WACC assumptions in the sensitivity table." if result["Upside"] >= 0 else
+                   "The market is pricing higher growth or lower risk than your model. That premium must be "
+                   "supported by operating performance.")
+        st.markdown(f"<div class='br-verdict'><b>What This Means</b><br>{verdict}</div>",
                     unsafe_allow_html=True)
 
-    section("WACC × Terminal Büyüme Duyarlılığı")
+    section("WACC × Terminal Growth Sensitivity")
     sensitivity = dcf_sensitivity(
         st.session_state.dcf_base_fcf, growth, terminal, rate,
         st.session_state.dcf_years, st.session_state.dcf_shares,
@@ -241,62 +235,64 @@ if st.session_state.dcf_mode.startswith("İleri"):
         st.session_state.dcf_fade,
     ).T
     sensitivity.index = [f"%{item*100:.1f}" for item in sensitivity.index]
-    sensitivity.index.name = "Terminal Büyüme"
-    sensitivity.columns = [f"WACC %{item*100:.1f}" for item in sensitivity.columns]
+    sensitivity.index.name = "Terminal Growth"
+    sensitivity.columns = [f"WACC {item*100:.1f}%" for item in sensitivity.columns]
     sensitivity_display = sensitivity.reset_index()
     st.dataframe(
         sensitivity_display.style.format(
             {column: f"{currency} {{:,.2f}}" for column in sensitivity.columns}
         ).background_gradient(subset=list(sensitivity.columns), cmap="RdYlGn"),
         column_config={
-            "Terminal Büyüme": st.column_config.TextColumn(
-                "Terminal Büyüme", width="medium",
+            "Terminal Growth": st.column_config.TextColumn(
+                "Terminal Growth", width="medium",
             )
         },
         hide_index=True,
         width="stretch",
     )
-    st.caption("Yeşil hücreler daha yüksek, kırmızı hücreler daha düşük ima edilen değeri gösterir. "
-               "Tek bir hücre yerine sonuçların geniş bir varsayım aralığında dayanıklı olup olmadığına bakın.")
+    st.caption("Green cells indicate higher implied values and red cells indicate lower implied values. "
+               "Assess whether the conclusion remains robust across a broad range of assumptions.")
 
-    section("Senaryo Karşılaştırması")
+    section("Scenario Comparison")
     cards = st.columns(3)
-    scenario_tones = {"Ayı": "br-danger", "Baz": "", "Boğa": ""}
+    scenario_tones = {"Bear": "br-danger", "Base": "", "Bull": ""}
     for column, (name, row) in zip(cards, scenarios.iterrows()):
         with column:
             st.markdown(
                 f"""<div class="br-result {scenario_tones[name]}">
-                <div class="br-kicker">{name} senaryosu</div>
-                <div class="br-big" style="font-size:2.1rem">{currency} {row['Hisse Başı Değer']:,.2f}</div>
-                <div class="br-note">Büyüme %{row['FCF Büyümesi']*100:.1f} · WACC %{row['WACC']*100:.1f}<br>
-                Fiyat farkı {row['Fiyat Farkı']:+.1%}</div></div>""",
+                <div class="br-kicker">{name} Case</div>
+                <div class="br-big" style="font-size:2.1rem">{currency} {row['Value Per Share']:,.2f}</div>
+                <div class="br-note">Growth {row['FCF Growth']*100:.1f}% · WACC {row['WACC']*100:.1f}%<br>
+                Upside / downside {row['Upside / Downside']:+.1%}</div></div>""",
                 unsafe_allow_html=True,
             )
 
-    section("Bugünkü Değer Dağılımı")
+    section("Present Value Breakdown")
     schedule = result["Schedule"].copy()
-    pv_chart = schedule.set_index("Yıl")[["Bugünkü Değer"]]
-    pv_chart.index = [f"Yıl {year}" for year in pv_chart.index]
-    pv_chart.loc["Terminal"] = result["PV Terminal"]
-    st.bar_chart(pv_chart)
+    pv_chart = schedule.set_index("Year")[["Present Value"]]
+    pv_chart.index = [f"Year {year}" for year in pv_chart.index]
+    pv_chart.loc["Terminal Value"] = result["PV Terminal"]
+    pv_chart["Share of Present Value"] = pv_chart["Present Value"] / pv_chart["Present Value"].sum()
+    st.bar_chart(pv_chart[["Share of Present Value"]], height=360)
+    st.caption("The chart displays each component as a share of total present value so Years 1–5/10 remain visible even when terminal value is dominant.")
     st.dataframe(schedule.style.format({
-        "Büyüme": "{:.1%}", "Serbest Nakit Akışı": f"{currency} {{:,.0f}}",
-        "İskonto Faktörü": "{:.4f}", "Bugünkü Değer": f"{currency} {{:,.0f}}",
-    }), width="stretch")
+        "Growth": "{:.1%}", "Free Cash Flow": f"{currency} {{:,.0f}}",
+        "Discount Factor": "{:.4f}", "Present Value": f"{currency} {{:,.0f}}",
+    }), hide_index=True, width="stretch")
 
     if package:
         analyst_target = float(pd.to_numeric(record.get("Analyst Target"), errors="coerce"))
         analyst_count = float(pd.to_numeric(record.get("Analyst Count"), errors="coerce"))
         if np.isfinite(analyst_target):
-            section("Piyasa · Analist · DCF")
-            analyst_note = f"{int(analyst_count)} analist" if np.isfinite(analyst_count) else "Konsensüs hedefi"
+            section("Market · Analyst · DCF")
+            analyst_note = f"{int(analyst_count)} analysts" if np.isfinite(analyst_count) else "Consensus target"
             st.markdown(
                 f"""<div class="br-shell market-triad"><div class="br-grid">
-                <div class="br-stat"><span>Analist Ortalama Hedefi</span>
+                <div class="br-stat"><span>Mean Analyst Target</span>
                 <strong>{currency} {analyst_target:,.2f}</strong><small>{analyst_note}</small></div>
-                <div class="br-stat"><span>Güncel Fiyat</span>
-                <strong>{currency} {st.session_state.dcf_price:,.2f}</strong><small>Piyasa fiyatı</small></div>
-                <div class="br-stat"><span>DCF Makul Değeri</span>
+                <div class="br-stat"><span>Current Price</span>
+                <strong>{currency} {st.session_state.dcf_price:,.2f}</strong><small>Market price</small></div>
+                <div class="br-stat"><span>DCF Fair Value</span>
                 <strong>{currency} {result['Per Share']:,.2f}</strong><small>{result['Upside']:+.1%}</small></div>
                 </div></div>""",
                 unsafe_allow_html=True,
@@ -307,7 +303,7 @@ else:
         with st.container(border=True):
             _assumption_inputs(include_growth=False)
     if st.session_state.dcf_price <= 0:
-        output_col.info("Ters DCF için güncel hisse fiyatı gereklidir.")
+        output_col.info("A current share price is required for reverse DCF.")
         footer()
         st.stop()
     implied_growth = reverse_dcf(
@@ -317,80 +313,80 @@ else:
         st.session_state.dcf_fade,
     )
     consensus = float(pd.to_numeric(record.get("EPS Growth"), errors="coerce")) if package else np.nan
-    risk = "Makul beklenti" if implied_growth <= .10 else (
-        "Yüksek beklenti" if implied_growth <= .25 else "Agresif büyüme fiyatlanıyor")
+    risk = "Reasonable Expectation" if implied_growth <= .10 else (
+        "High Expectation" if implied_growth <= .25 else "Aggressive Growth Priced In")
     tone = "" if implied_growth <= .25 else "br-danger"
     with output_col:
         st.markdown(
             f"""<div class="br-result {tone}" style="text-align:center">
             <div class="br-kicker">{html.escape(company)}</div>
-            <div class="br-note">{st.session_state.dcf_years} yıllık ima edilen FCF büyümesi</div>
-            <div class="br-big">%{implied_growth*100:.1f}</div>
+            <div class="br-note">Implied {st.session_state.dcf_years}-year FCF growth</div>
+            <div class="br-big">{implied_growth*100:.1f}%</div>
             <div class="br-kicker">{risk}</div>
             <div class="br-grid">
-              <div class="br-stat"><span>Hisse fiyatı</span><strong>{currency} {st.session_state.dcf_price:,.2f}</strong></div>
-              <div class="br-stat"><span>Piyasa değeri</span><strong>{_money(st.session_state.dcf_price*st.session_state.dcf_shares,currency)}</strong></div>
-              <div class="br-stat"><span>Mevcut FCF</span><strong>{_money(st.session_state.dcf_base_fcf,currency)}</strong></div>
+              <div class="br-stat"><span>Share Price</span><strong>{currency} {st.session_state.dcf_price:,.2f}</strong></div>
+              <div class="br-stat"><span>Market Capitalization</span><strong>{_money(st.session_state.dcf_price*st.session_state.dcf_shares,currency)}</strong></div>
+              <div class="br-stat"><span>Current FCF</span><strong>{_money(st.session_state.dcf_base_fcf,currency)}</strong></div>
             </div></div>""",
             unsafe_allow_html=True,
         )
         if np.isfinite(consensus):
             difference = implied_growth - consensus
-            st.metric("Analist büyüme konsensüsü", f"%{consensus*100:.1f}",
-                      f"İma edilen büyüme farkı {difference*100:+.1f} puan")
+            st.metric("Analyst Growth Consensus", f"{consensus*100:.1f}%",
+                      f"Implied growth difference {difference*100:+.1f} percentage points")
         st.markdown(
-            f"<div class='br-verdict'>Piyasa fiyatı, seçili WACC ve terminal büyüme altında "
-            f"yaklaşık <b>%{implied_growth*100:.1f}</b> yıllık FCF büyümesi gerektiriyor. "
-            "Bu oranı şirketin tarihsel büyümesi, sektör görünümü ve analist beklentileriyle karşılaştırın.</div>",
+            f"<div class='br-verdict'>At the selected WACC and terminal growth rate, the market price requires "
+            f"approximately <b>{implied_growth*100:.1f}%</b> annual FCF growth. "
+            "Compare this rate with the company's historical growth, industry outlook, and analyst expectations.</div>",
             unsafe_allow_html=True,
         )
 
-    section("İma Edilen Büyüme Duyarlılığı")
+    section("Implied Growth Sensitivity")
     reverse_grid = reverse_dcf_sensitivity(
         st.session_state.dcf_price, st.session_state.dcf_base_fcf, terminal, rate,
         st.session_state.dcf_years, st.session_state.dcf_shares,
         st.session_state.dcf_net_debt, st.session_state.dcf_midyear,
         st.session_state.dcf_fade,
     )
-    reverse_grid.index = [f"WACC %{item*100:.1f}" for item in reverse_grid.index]
-    reverse_grid.columns = [f"Terminal %{item*100:.1f}" for item in reverse_grid.columns]
+    reverse_grid.index = [f"WACC {item*100:.1f}%" for item in reverse_grid.index]
+    reverse_grid.columns = [f"Terminal {item*100:.1f}%" for item in reverse_grid.columns]
     st.dataframe(reverse_grid.style.format("{:.1%}").background_gradient(cmap="RdYlGn_r"),
                  width="stretch")
-    st.caption("Daha yüksek ima edilen büyüme, mevcut fiyatın gerçekleşmesi için daha zor operasyonel beklenti demektir.")
+    st.caption("A higher implied growth rate represents a more demanding operating expectation embedded in the current price.")
 
-section("DCF’yi Nasıl Okumalısınız?")
+section("How to Interpret a DCF")
 lesson_cols = st.columns(2)
 lessons = [
-    ("1 · Serbest nakit akışı", "Faaliyetlerden nakit akışından yatırım harcamalarını çıkarın. Dalgalı şirketlerde tek dönem yerine normalize edilmiş birkaç yıllık ortalama kullanın."),
-    ("2 · Büyüme varsayımı", "Tarihsel büyümeyi başlangıç noktası alın; ölçek büyüdükçe yüksek büyümenin kalıcı olamayacağını hesaba katın."),
-    ("3 · WACC", "WACC yatırımcının talep ettiği getiridir. Risk yükseldikçe WACC yükselir ve bugünkü değer düşer."),
-    ("4 · Duyarlılık", "Tek bir makul değer yanlış kesinlik yaratabilir. Tezin farklı WACC ve terminal büyüme hücrelerinde ayakta kalması önemlidir."),
+    ("1 · Free Cash Flow", "Subtract capital expenditures from cash flow from operations. For volatile businesses, use a normalized multi-year average rather than a single period."),
+    ("2 · Growth Assumption", "Use historical growth as a starting point and recognize that high growth becomes harder to sustain as the company scales."),
+    ("3 · WACC", "WACC is the return required by capital providers. As risk and WACC rise, present value falls."),
+    ("4 · Sensitivity", "A single fair-value estimate can create false precision. The investment thesis should remain credible across multiple WACC and terminal-growth assumptions."),
 ]
 for index, (title, text) in enumerate(lessons):
     with lesson_cols[index % 2]:
         st.markdown(f"<div class='br-lesson'><h3>{title}</h3><p class='br-note'>{text}</p></div>",
                     unsafe_allow_html=True)
 
-with st.expander("Formüller, sınırlamalar ve sık sorulan sorular"):
+with st.expander("Formulas, Limitations, and Frequently Asked Questions"):
     st.markdown("""
-#### Temel formül
+#### Core formulas
 
-`İşletme Değeri = Açık dönem FCF bugünkü değerleri + Terminal değerin bugünkü değeri`
+`Enterprise Value = Present value of explicit-period FCF + Present value of terminal value`
 
-`Terminal Değer = FCFₙ × (1 + g) / (WACC − g)`
+`Terminal Value = FCFₙ × (1 + g) / (WACC − g)`
 
-`Özsermaye Değeri = İşletme Değeri − Net Borç`
+`Equity Value = Enterprise Value − Net Debt`
 
-#### DCF ne zaman zayıflar?
+#### When is DCF less reliable?
 
-- Negatif veya öngörülemeyen nakit akışına sahip erken aşama şirketlerde,
-- Döngünün tepe veya dip noktasındaki emtia ve ağır sanayi şirketlerinde,
-- Banka ve sigorta gibi borcun faaliyet girdisi olduğu sektörlerde,
-- Terminal değerin toplam değerin çok büyük bölümünü oluşturduğu modellerde.
+- Early-stage companies with negative or unpredictable cash flow,
+- Commodity and heavy-industry businesses at a cyclical peak or trough,
+- Banks and insurers, where debt is an operating input,
+- Models in which terminal value represents an excessive share of total value.
 
-#### İyi bir güvenlik marjı nedir?
+#### What is an appropriate margin of safety?
 
-Tek bir evrensel oran yoktur. İş modeli ve tahminler ne kadar belirsizse gereken güvenlik marjı o kadar yüksek olmalıdır.
+There is no universal threshold. The greater the uncertainty in the business model and forecasts, the larger the required margin of safety should be.
 """)
 
 export_result = {
@@ -406,10 +402,10 @@ export_result = {
 }
 download_col, share_col = st.columns(2)
 download_col.download_button(
-    "Analizi JSON Olarak İndir", json.dumps(export_result, ensure_ascii=False, indent=2, default=float),
+    "Download Analysis as JSON", json.dumps(export_result, ensure_ascii=False, indent=2, default=float),
     "dcf_analysis.json", "application/json", width="stretch",
 )
-if share_col.button("Varsayımları Bağlantıya Yaz", width="stretch"):
+if share_col.button("Add Assumptions to URL", width="stretch"):
     st.query_params.update({
         "g": str(st.session_state.dcf_growth), "tg": str(st.session_state.dcf_terminal),
         "w": str(st.session_state.dcf_wacc), "y": str(st.session_state.dcf_years),
@@ -418,5 +414,5 @@ if share_col.button("Varsayımları Bağlantıya Yaz", width="stretch"):
         "mid": "1" if st.session_state.dcf_midyear else "0",
         "fade": "1" if st.session_state.dcf_fade else "0",
     })
-    st.success("Varsayımlar adres çubuğuna eklendi; bağlantıyı kopyalayabilirsiniz.")
+    st.success("Assumptions were added to the address bar; you can now copy the link.")
 footer()

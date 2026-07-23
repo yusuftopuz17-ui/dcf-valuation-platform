@@ -26,8 +26,8 @@ def test_dcf_sensitivity_and_scenarios():
     grid = dcf_sensitivity(100, .10, .025, .09, 5, 10, 20, True, False)
     assert grid.shape == (9, 9)
     cases = scenario_table(100, .10, .025, .09, 5, 10, 20, 80, True, False)
-    assert cases.loc["Ayı", "Hisse Başı Değer"] < cases.loc["Baz", "Hisse Başı Değer"]
-    assert cases.loc["Baz", "Hisse Başı Değer"] < cases.loc["Boğa", "Hisse Başı Değer"]
+    assert cases.loc["Bear", "Value Per Share"] < cases.loc["Base", "Value Per Share"]
+    assert cases.loc["Base", "Value Per Share"] < cases.loc["Bull", "Value Per Share"]
     reverse_grid = reverse_dcf_sensitivity(80, 100, .025, .09, 5, 10, 20, True, False)
     assert reverse_grid.shape == (3, 3)
     assert np.isfinite(reverse_grid.to_numpy()).all()
@@ -43,8 +43,8 @@ def test_comparable_implied_prices_use_ev_bridge():
         "P/S": [3, 4, 5], "P/B": [5, 6, 7],
     })
     implied = comparable_implied_prices(target, peers)
-    assert implied.loc["EV/EBITDA", "İma Edilen Fiyat"] == pytest.approx((1200 - 20) / 10)
-    assert np.isfinite(implied["İma Edilen Fiyat"]).all()
+    assert implied.loc["EV/EBITDA", "Implied Price"] == pytest.approx((1200 - 20) / 10)
+    assert np.isfinite(implied["Implied Price"]).all()
 
 
 def test_comparable_implied_prices_ignores_non_economic_provider_multiples():
@@ -59,5 +59,5 @@ def test_comparable_implied_prices_ignores_non_economic_provider_multiples():
         "P/B": [5.0, 6.0, 30000.0],
     })
     implied = comparable_implied_prices(target, peers)
-    assert implied.loc["EV/EBITDA", "Benzer Medyanı"] == pytest.approx(11.0)
-    assert implied.loc["P/E", "Benzer Medyanı"] == pytest.approx(19.0)
+    assert implied.loc["EV/EBITDA", "Peer Median"] == pytest.approx(11.0)
+    assert implied.loc["P/E", "Peer Median"] == pytest.approx(19.0)

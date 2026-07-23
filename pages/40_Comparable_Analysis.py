@@ -55,7 +55,7 @@ def _display_table(target: pd.Series, peers: pd.DataFrame, view: str) -> pd.Data
     frame["EV/EBITDA"] = np.where(frame["EBITDA"] > 0, frame["Enterprise Value"] / frame["EBITDA"], np.nan)
     columns = ["Company", "Market Cap", "P/E", "EV/EBITDA", "P/S", "P/B",
                "Revenue Growth", "Net Margin"]
-    if view == "Son Dönem + İleri":
+    if view == "Trailing + Forward":
         columns += ["Forward P/E", "PEG", "EPS Growth"]
     return frame[columns]
 
@@ -64,22 +64,17 @@ st.session_state.setdefault("quick_comp_ticker", "MSFT")
 st.session_state.setdefault("quick_comp_manual", "")
 st.session_state.setdefault("quick_comp_package", None)
 
-page_header("Benzer Şirket Analizi", "Hedef şirketi sektör benzerleriyle karşılaştırın; medyan çarpanlardan ima edilen fiyatı görün.")
+page_header("Comparable Company Analysis", "Benchmark the target against sector peers and estimate its implied price from median trading multiples.")
 left, right = st.columns([3, 1])
-left.text_input("Borsa sembolü", key="quick_comp_ticker", placeholder="Örn. MSFT")
-run = right.button("Analiz Et", type="primary", use_container_width=True)
-presets = st.columns([.6, .6, .6, 4])
-for column, ticker in zip(presets[:3], ["AAPL", "GOOGL", "MSFT"]):
-    if column.button(ticker, use_container_width=True):
-        st.session_state.quick_comp_ticker = ticker
-        st.rerun()
-st.text_input("İsteğe bağlı manuel benzerler", key="quick_comp_manual",
-              placeholder="Örn. AAPL, GOOGL, ORCL — boşsa sektör taraması yapılır")
+left.text_input("Ticker Symbol", key="quick_comp_ticker", placeholder="e.g., MSFT")
+run = right.button("Analyze", type="primary", use_container_width=True)
+st.text_input("Optional Manual Peers", key="quick_comp_manual",
+              placeholder="e.g., AAPL, GOOGL, ORCL — leave blank for automatic sector screening")
 
 if run:
     ticker = st.session_state.quick_comp_ticker.strip().upper()
     try:
-        with st.spinner("Şirket ve benzer şirket verileri Yahoo Finance üzerinden alınıyor..."):
+        with st.spinner("Retrieving target and peer-company data from Yahoo Finance..."):
             target_package = company_record(ticker)
             target_record = target_package["record"]
             manual = [item.strip().upper() for item in st.session_state.quick_comp_manual.split(",") if item.strip()]
@@ -91,8 +86,8 @@ if run:
                 peer_frame = peer_frame.loc[same_currency & same_country]
             if len(peer_frame) < 3:
                 raise ValueError(
-                    "Aynı ülke ve para biriminde sağlıklı bir medyan için en az 3 benzer şirket verisi gerekli. "
-                    "Manuel benzer şirket alanına birincil borsa sembollerini girin."
+                    "At least three peers in the same country and currency are required for a reliable median. "
+                    "Enter primary-listing tickers in the manual peer field."
                 )
             st.session_state.quick_comp_package = {
                 "target": target_record, "peers": peer_frame, "failures": failures,
@@ -100,12 +95,12 @@ if run:
             }
     except Exception as exc:
         st.session_state.quick_comp_package = None
-        st.error(f"Analiz tamamlanamadı: {exc}")
+        st.error(f"Analysis could not be completed: {exc}")
 
 package = st.session_state.quick_comp_package
 if not package:
-    banner("Nasıl çalışır?", "Sembolü girip Analiz Et'e basın. Araç, hedef şirketin sektöründen adayları bulur; işlem çarpanlarını, büyümeyi ve kârlılığı aynı tabloda karşılaştırır.")
-    st.caption("Veri yalnızca düğmeye bastığınızda indirilir. Kaynak: Yahoo Finance. Sonuçlar yatırım tavsiyesi değildir.")
+    banner("How It Works", "Enter a ticker and select Analyze. The tool identifies sector peers and compares trading multiples, growth, and profitability in one table.")
+    st.caption("Data is retrieved only when you select Analyze. Source: Yahoo Finance. Results are not investment advice.")
     footer()
     st.stop()
 
@@ -120,18 +115,28 @@ implied = comparable_implied_prices(target_calc, peers)
 currency = str(target["Currency"])
 
 section(f"{target['Company']} ({target.name})")
-metric_cols = st.columns(4)
-metric_cols[0].metric("Güncel Fiyat", f"{currency} {target['Current Price']:,.2f}", target["Price Date"])
-metric_cols[1].metric("Piyasa Değeri", _fmt_money(float(target["Market Cap"]), currency))
-metric_cols[2].metric("Hasılat Büyümesi", f"%{target['Revenue Growth']*100:,.1f}")
-metric_cols[3].metric("Net Kâr Marjı", f"%{target['Net Margin']*100:,.1f}")
+top_metrics = [
+    ("Current Price", f"{currency} {target['Current Price']:,.2f}", str(target["Price Date"])),
+    ("Market Capitalization", _fmt_money(float(target["Market Cap"]), currency), "Equity value"),
+    ("Revenue Growth", f"{target['Revenue Growth']*100:,.1f}%", "Latest reported period"),
+    ("Net Profit Margin", f"{target['Net Margin']*100:,.1f}%", "Latest reported period"),
+]
+st.markdown(
+    "<div class='br-shell comp-kpi-grid'><div class='br-grid'>"
+    + "".join(
+        f"<div class='br-stat'><span>{label}</span><strong>{value}</strong><small>{note}</small></div>"
+        for label, value, note in top_metrics
+    )
+    + "</div></div>",
+    unsafe_allow_html=True,
+)
 
-view = st.radio("Görünüm", ["Son Dönem", "Son Dönem + İleri"], horizontal=True)
+view = st.radio("View", ["Trailing", "Trailing + Forward"], horizontal=True)
 comparison = _display_table(target_calc, peers, view)
 numeric_columns = [column for column in comparison.columns if column != "Company"]
 numeric_peers = comparison.iloc[1:][numeric_columns].apply(pd.to_numeric, errors="coerce")
 median = numeric_peers.median()
-median_row = pd.DataFrame([{**{"Company": "Benzer Şirket Medyanı"}, **median.to_dict()}], index=["MEDYAN"])
+median_row = pd.DataFrame([{**{"Company": "Peer Median"}, **median.to_dict()}], index=["MEDIAN"])
 comparison = pd.concat([comparison, median_row])
 
 percent_columns = [name for name in ["Revenue Growth", "Net Margin", "EPS Growth"] if name in comparison]
@@ -142,24 +147,24 @@ st.dataframe(comparison.style.format(formats, na_rep="N/M")
              .background_gradient(subset=[c for c in ["P/E", "EV/EBITDA", "P/S", "P/B"] if c in comparison],
                                   cmap="RdYlGn_r"),
              use_container_width=True, height=min(490, 75 + 36 * len(comparison)))
-st.caption(f"Kaynak: {package['source']} · Hedef finansal dönem: {target['Financial Date']} · "
-           f"Fiyat tarihi: {target['Price Date']} · Benzer şirket sayısı: {len(peers)}")
+st.caption(f"Source: {package['source']} · Target financial period: {target['Financial Date']} · "
+           f"Price date: {target['Price Date']} · Peer count: {len(peers)}")
 
-section("Benzer Şirket Medyanları")
+section("Peer Company Medians")
 median_items = [
-    ("F/K", median.get("P/E"), "x"),
-    ("FD/FAVÖK", median.get("EV/EBITDA"), "x"),
-    ("F/Satışlar", median.get("P/S"), "x"),
-    ("PD/DD", median.get("P/B"), "x"),
-    ("Hasılat Büyümesi", median.get("Revenue Growth"), "%"),
-    ("Net Kâr Marjı", median.get("Net Margin"), "%"),
+    ("P/E", median.get("P/E"), "x"),
+    ("EV/EBITDA", median.get("EV/EBITDA"), "x"),
+    ("P/Sales", median.get("P/S"), "x"),
+    ("P/Book", median.get("P/B"), "x"),
+    ("Revenue Growth", median.get("Revenue Growth"), "%"),
+    ("Net Profit Margin", median.get("Net Margin"), "%"),
 ]
 median_cards = []
 for label, value, unit in median_items:
     if pd.isna(value):
         rendered = "N/M"
     elif unit == "%":
-        rendered = f"%{float(value)*100:.1f}"
+        rendered = f"{float(value)*100:.1f}%"
     else:
         rendered = f"{float(value):.1f}x"
     median_cards.append(
@@ -172,38 +177,47 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-section("Çarpanlardan İma Edilen Fiyat")
+section("Multiple-Implied Share Price")
 if implied.empty:
-    st.warning("Geçerli çarpan ve pozitif temel finansal metrik kombinasyonu bulunamadı.")
+    st.warning("No valid combination of trading multiples and positive target fundamentals was available.")
 else:
     st.dataframe(implied.style.format({
-        "Benzer Medyanı": "{:.1f}x", "İma Edilen Fiyat": f"{currency} {{:,.2f}}",
-        "Güncel Fiyat": f"{currency} {{:,.2f}}", "Prim / İskonto": "{:+.1%}",
+        "Peer Median": "{:.1f}x", "Implied Price": f"{currency} {{:,.2f}}",
+        "Current Price": f"{currency} {{:,.2f}}", "Premium / Discount": "{:+.1%}",
     }), use_container_width=True)
-    prices = implied["İma Edilen Fiyat"]
+    prices = implied["Implied Price"]
     blended = prices.median()
-    cards = st.columns(3)
-    cards[0].metric("Harmanlanmış Orta Nokta", f"{currency} {blended:,.2f}",
-                    f"{blended/target['Current Price']-1:+.1%}")
-    cards[1].metric("Değerleme Aralığı", f"{currency} {prices.min():,.2f} – {prices.max():,.2f}")
-    cards[2].metric("Geçerli Yöntem", str(len(prices)), "EV ve özsermaye çarpanları")
-    expensive = int((target_calc[implied.index] > implied["Benzer Medyanı"]).sum())
-    verdict = "primli" if blended < target["Current Price"] else "iskontolu"
-    banner("Analist Yorumu", f"Hedef şirket, harmanlanmış benzer şirket değerine göre yaklaşık "
-           f"%{abs(blended/target['Current Price']-1)*100:.1f} {verdict} görünüyor. "
-           f"{expensive}/{len(implied)} çarpanda hedef şirket benzer medyanından daha pahalı. "
-           "Büyüme, marj, muhasebe dönemi ve iş modeli farkları yorumlanmadan sonuç tek başına kullanılmamalıdır.")
+    result_metrics = [
+        ("Blended Midpoint", f"{currency} {blended:,.2f}", f"{blended/target['Current Price']-1:+.1%} vs. current price"),
+        ("Valuation Range", f"{currency} {prices.min():,.2f} – {prices.max():,.2f}", "Low to high implied price"),
+        ("Valid Methods", str(len(prices)), "Enterprise- and equity-value multiples"),
+    ]
+    st.markdown(
+        "<div class='br-shell comp-result-grid'><div class='br-grid'>"
+        + "".join(
+            f"<div class='br-stat'><span>{label}</span><strong>{value}</strong><small>{note}</small></div>"
+            for label, value, note in result_metrics
+        )
+        + "</div></div>",
+        unsafe_allow_html=True,
+    )
+    expensive = int((target_calc[implied.index] > implied["Peer Median"]).sum())
+    verdict = "premium" if blended < target["Current Price"] else "discount"
+    banner("Analyst Interpretation", f"The target appears to trade at an approximate "
+           f"{abs(blended/target['Current Price']-1)*100:.1f}% {verdict} to the blended peer-implied value. "
+           f"It is more expensive than the peer median on {expensive} of {len(implied)} valid multiples. "
+           "The result should not be used without considering differences in growth, margins, reporting periods, and business models.")
 
-with st.expander("Metodoloji ve kullanım notları"):
+with st.expander("Methodology and Usage Notes"):
     st.markdown("""
-- **F/K (P/E):** Pozitif net kâr üreten şirketlerde özsermaye değerini karşılaştırır.
-- **FD/FAVÖK (EV/EBITDA):** Sermaye yapısı ve amortisman farklarını azaltarak işletme değerini karşılaştırır.
-- **F/Satışlar (P/S):** Kârlılığı henüz oturmamış büyüme şirketlerinde ek referans sağlar.
-- **PD/DD (P/B):** Bankalar ve varlık yoğun şirketlerde daha anlamlıdır.
-- İma edilen fiyat, benzer medyan çarpanın hedef şirketin ilgili finansal metriğine uygulanmasıyla hesaplanır.
-- Kırmızı/yeşil hücreler yalnızca göreli pahalı/ucuz görünümü destekler; yatırım görüşü değildir.
+- **P/E:** Compares equity value for companies with positive net income.
+- **EV/EBITDA:** Compares enterprise value while reducing capital-structure and depreciation differences.
+- **P/Sales:** Provides an additional reference for growth companies whose profitability has not yet normalized.
+- **P/Book:** Is generally more relevant for banks and asset-intensive businesses.
+- Implied price is calculated by applying each peer median multiple to the target company's corresponding financial metric.
+- Red and green cells indicate relative expensiveness or cheapness only; they are not investment recommendations.
 """)
 if not package["failures"].empty:
-    with st.expander("Verisi alınamayan adaylar"):
+    with st.expander("Candidates With Unavailable Data"):
         st.dataframe(package["failures"], use_container_width=True)
 footer()
