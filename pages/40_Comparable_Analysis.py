@@ -299,9 +299,14 @@ else:
         "Implied Price at 75th Percentile": f"Implied Price at 75th Percentile (in {currency} per share)",
         "Current Price": f"Current Price (in {currency} per share)",
     }
-    implied_display = implied.rename(columns=money_columns).copy()
+    present_money_columns = {
+        source: label for source, label in money_columns.items() if source in implied.columns
+    }
+    implied_display = implied.rename(columns=present_money_columns).copy()
     for source in ["Implied Enterprise Value", "Net Debt Adjustment", "Implied Equity Value"]:
-        implied_display[money_columns[source]] = implied_display[money_columns[source]] / 1_000_000
+        if source in present_money_columns:
+            label = present_money_columns[source]
+            implied_display[label] = pd.to_numeric(implied_display[label], errors="coerce") / 1_000_000
     implied_formats = {
         "Peer 25th Percentile": "{:.1f}x",
         "Peer Median": "{:.1f}x",
@@ -309,14 +314,13 @@ else:
         "Peer 75th Percentile": "{:.1f}x",
         "Target Multiple": "{:.1f}x",
         "Premium / Discount": "{:+.1%}",
-        money_columns["Implied Enterprise Value"]: "{:,.1f}",
-        money_columns["Net Debt Adjustment"]: "{:,.1f}",
-        money_columns["Implied Equity Value"]: "{:,.1f}",
-        money_columns["Implied Price at 25th Percentile"]: "{:,.2f}",
-        money_columns["Implied Price"]: "{:,.2f}",
-        money_columns["Implied Price at 75th Percentile"]: "{:,.2f}",
-        money_columns["Current Price"]: "{:,.2f}",
     }
+    for source, label in present_money_columns.items():
+        implied_formats[label] = "{:,.1f}" if source in {
+            "Implied Enterprise Value",
+            "Net Debt Adjustment",
+            "Implied Equity Value",
+        } else "{:,.2f}"
     st.dataframe(
         implied_display.style.format(implied_formats, na_rep="N/M"),
         width="stretch",
