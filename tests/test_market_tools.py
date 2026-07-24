@@ -12,6 +12,14 @@ from valuation_platform.market_tools import (
     reverse_dcf_sensitivity,
     scenario_table,
 )
+from valuation_platform.professional_analysis import (
+    DEFAULT_SIMILARITY_WEIGHTS,
+    comparable_similarity,
+    football_field_ranges,
+    identify_multiple_outliers,
+    peer_multiple_statistics,
+    validate_similarity_weights,
+)
 
 
 def test_forward_and_reverse_dcf_reconcile():
@@ -44,6 +52,9 @@ def test_comparable_implied_prices_use_ev_bridge():
     })
     implied = comparable_implied_prices(target, peers)
     assert implied.loc["EV/EBITDA", "Implied Price"] == pytest.approx((1200 - 20) / 10)
+    assert implied.loc["EV/EBITDA", "Implied Enterprise Value"] == pytest.approx(1200)
+    assert implied.loc["EV/EBITDA", "Implied Equity Value"] == pytest.approx(1180)
+    assert implied.loc["EV/EBITDA", "Net Debt Adjustment"] == pytest.approx(-20)
     assert np.isfinite(implied["Implied Price"]).all()
 
 
@@ -61,3 +72,56 @@ def test_comparable_implied_prices_ignores_non_economic_provider_multiples():
     implied = comparable_implied_prices(target, peers)
     assert implied.loc["EV/EBITDA", "Peer Median"] == pytest.approx(11.0)
     assert implied.loc["P/E", "Peer Median"] == pytest.approx(19.0)
+
+
+def test_similarity_excludes_unavailable_criteria_without_fabricating_scores():
+    target = {
+        "Sector": "Technology", "Subsector": "Software", "Geography": ["United States"],
+        "Country": "United States", "Business Model": [], "Customer Structure": [],
+        "Revenue Model": [], "Revenue Growth": .20, "EBITDA Margin": .35, "Revenue": 1000,
+    }
+    peers = pd.DataFrame([
+        {
+            "Ticker": "GOOD", "Company": "Good Peer", "Sector": "Technology",
+            "Subsector": "Software", "Country": "United States", "Business Model": [],
+            "Customer Structure": [], "Revenue Model": [], "Revenue Growth": .18,
+            "EBITDA Margin": .32, "Revenue": 900,
+        },
+        {
+            "Ticker": "WEAK", "Company": "Weak Peer", "Sector": "Industrials",
+            "Subsector": "Machinery", "Country": "Germany", "Business Model": [],
+            "Customer Structure": [], "Revenue Model": [], "Revenue Growth": .03,
+            "EBITDA Margin": .08, "Revenue": 5000,
+        },
+    ]).set_index("Ticker")
+    scored = comparable_similarity(target, peers, DEFAULT_SIMILARITY_WEIGHTS)
+    assert scored.index[0] == "GOOD"
+    assert np.isnan(scored.loc["GOOD", "Customer Base Score"])
+    assert np.isnan(scored.loc["GOOD", "Revenue Model Score"])
+    assert scored.loc["GOOD", "Available Weight"] < 1.0
+    assert scored.loc["GOOD", "Overall Similarity"] > scored.loc["WEAK", "Overall Similarity"]
+    with pytest.raises(ValueError, match="100%"):
+        validate_similarity_weights({**DEFAULT_SIMILARITY_WEIGHTS, "Sector": .10})
+
+
+def test_peer_statistics_outliers_and_football_ranges():
+    peers = pd.DataFrame({
+        "EV/EBITDA": [8.0, 9.0, 10.0, 40.0, 11.0],
+        "P/E": [18.0, 19.0, 20.0, 21.0, 22.0],
+        "P/S": [2.0, 2.5, 3.0, 3.5, 4.0],
+        "P/B": [3.0, 3.2, 3.4, 3.6, 3.8],
+        "Company": ["A", "B", "C", "Outlier", "D"],
+    }, index=["A", "B", "C", "X", "D"])
+    statistics = peer_multiple_statistics(peers)
+    assert statistics.loc["P/E", "Median"] == pytest.approx(20.0)
+    outliers = identify_multiple_outliers(peers)
+    assert set(outliers["Ticker"]) == {"X"}
+
+    sensitivity = dcf_sensitivity(100, .10, .025, .09, 5, 10, 20, True, False)
+    ranges = football_field_ranges(sensitivity, .09, .025)
+    assert set(ranges["Method"]) == {
+        "DCF — WACC Sensitivity",
+        "DCF — Terminal Growth Sensitivity",
+    }
+    assert (ranges["Low"] <= ranges["Midpoint"]).all()
+    assert (ranges["Midpoint"] <= ranges["High"]).all()

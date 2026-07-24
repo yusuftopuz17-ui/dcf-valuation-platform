@@ -115,7 +115,7 @@ def scenario_table(base_fcf: float, growth: float, terminal_growth: float, wacc:
 
 
 def comparable_implied_prices(target: pd.Series, peers: pd.DataFrame) -> pd.DataFrame:
-    """Apply peer medians to target fundamentals and bridge EV multiples to price."""
+    """Apply peer quartiles/medians to target fundamentals and bridge EV to equity."""
     definitions = {
         "EV/EBITDA": ("EBITDA", True), "P/E": ("Net Income", False),
         "P/S": ("Revenue", False), "P/B": ("Equity", False),
@@ -133,14 +133,34 @@ def comparable_implied_prices(target: pd.Series, peers: pd.DataFrame) -> pd.Data
             .dropna()
         )
         observations = observations[(observations > 0) & (observations <= sensible_ceiling[multiple])]
-        median = observations.median()
+        q1, median, mean, q3 = observations.quantile(.25), observations.median(), observations.mean(), observations.quantile(.75)
         fundamental = float(target.get(metric, np.nan))
         if not np.isfinite(median) or not np.isfinite(fundamental) or fundamental <= 0 or shares <= 0:
             continue
-        value = median * fundamental
-        equity = value - float(target.get("Net Debt", 0)) if is_enterprise else value
+        net_debt = float(target.get("Net Debt", 0))
+        value = median * fundamental if is_enterprise else median * fundamental + net_debt
+        equity = value - net_debt
         price = equity / shares
+        q1_value = q1 * fundamental if is_enterprise else q1 * fundamental + net_debt
+        q3_value = q3 * fundamental if is_enterprise else q3 * fundamental + net_debt
+        q1_price = (q1_value - net_debt) / shares
+        q3_price = (q3_value - net_debt) / shares
         current = float(target.get("Current Price", np.nan))
-        rows.append({"Multiple": multiple, "Peer Median": median, "Implied Price": price,
-                     "Current Price": current, "Premium / Discount": price / current - 1})
+        rows.append({
+            "Multiple": multiple,
+            "Peer 25th Percentile": q1,
+            "Peer Median": median,
+            "Peer Mean": mean,
+            "Peer 75th Percentile": q3,
+            "Target Multiple": float(target.get(multiple, np.nan)),
+            "Target Metric": fundamental,
+            "Implied Enterprise Value": value,
+            "Net Debt Adjustment": -net_debt,
+            "Implied Equity Value": equity,
+            "Implied Price at 25th Percentile": q1_price,
+            "Implied Price": price,
+            "Implied Price at 75th Percentile": q3_price,
+            "Current Price": current,
+            "Premium / Discount": price / current - 1 if current > 0 else np.nan,
+        })
     return pd.DataFrame(rows).set_index("Multiple") if rows else pd.DataFrame()

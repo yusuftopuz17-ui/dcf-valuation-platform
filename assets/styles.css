@@ -42,11 +42,12 @@ div[data-baseweb="input"] > div, div[data-baseweb="select"] > div, textarea { ba
 .market-triad .br-stat { min-height:112px; padding:16px; border:1px solid #39352d; border-radius:10px; display:flex; flex-direction:column; justify-content:center; }
 .comp-kpi-grid .br-grid { grid-template-columns:repeat(4,minmax(0,1fr)); align-items:stretch; margin-top:0; }
 .comp-result-grid .br-grid { grid-template-columns:repeat(3,minmax(0,1fr)); align-items:stretch; margin-top:0; }
-.comp-kpi-grid .br-stat, .comp-result-grid .br-stat { min-height:118px; padding:16px; border:1px solid #39352d; border-radius:10px; display:flex; flex-direction:column; justify-content:center; }
+.dcf-bridge-grid .br-grid { grid-template-columns:repeat(4,minmax(0,1fr)); align-items:stretch; margin-top:0; }
+.comp-kpi-grid .br-stat, .comp-result-grid .br-stat, .dcf-bridge-grid .br-stat { min-height:118px; padding:16px; border:1px solid #39352d; border-radius:10px; display:flex; flex-direction:column; justify-content:center; }
 .median-panel .br-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
 .median-panel .br-stat { min-height:82px; padding:14px; border:1px solid #39352d; border-radius:10px; }
 .br-note { color:var(--secondary-text); font-size:.9rem; line-height:1.65; }
 .br-verdict { border-left:4px solid var(--accent); background:rgba(214,176,76,.08); padding:16px 18px; border-radius:9px; margin:14px 0; }
 .br-lesson { border:1px solid var(--border); background:var(--card); border-radius:14px; padding:20px; min-height:180px; }
 @media (max-width: 1280px) { .iv-value { font-size: 1.25rem; } .block-container { padding-left: 2rem; padding-right: 2rem; } }
-@media (max-width: 900px) { .block-container { padding-left: 1rem; padding-right: 1rem; } .iv-card { min-height: 92px; } .br-grid,.median-panel .br-grid,.comp-kpi-grid .br-grid,.comp-result-grid .br-grid{grid-template-columns:1fr;} }
+@media (max-width: 900px) { .block-container { padding-left: 1rem; padding-right: 1rem; } .iv-card { min-height: 92px; } .br-grid,.median-panel .br-grid,.comp-kpi-grid .br-grid,.comp-result-grid .br-grid,.dcf-bridge-grid .br-grid{grid-template-columns:1fr;} }

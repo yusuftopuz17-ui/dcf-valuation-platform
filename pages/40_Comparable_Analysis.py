@@ -10,6 +10,13 @@ from src.ccv_provider import company_record, discover_yahoo_candidates, load_can
 from src.ui import banner, footer, kpi, page_header, section
 from valuation_platform.ccv import calculate_multiples
 from valuation_platform.market_tools import comparable_implied_prices
+from valuation_platform.professional_analysis import (
+    DEFAULT_SIMILARITY_WEIGHTS,
+    SIMILARITY_CRITERIA,
+    comparable_similarity,
+    identify_multiple_outliers,
+    peer_multiple_statistics,
+)
 
 
 PEER_PRESETS = {
@@ -45,8 +52,8 @@ def _fmt_money(value: float, currency: str) -> str:
         return "N/M"
     for divisor, suffix in ((1e12, "T"), (1e9, "B"), (1e6, "M")):
         if abs(value) >= divisor:
-            return f"{currency} {value/divisor:,.1f}{suffix}"
-    return f"{currency} {value:,.0f}"
+            return f"{value/divisor:,.1f}{suffix}"
+    return f"{value:,.0f}"
 
 
 def _display_table(target: pd.Series, peers: pd.DataFrame, view: str) -> pd.DataFrame:
@@ -54,7 +61,7 @@ def _display_table(target: pd.Series, peers: pd.DataFrame, view: str) -> pd.Data
     frame["P/E"] = np.where(frame["Net Income"] > 0, frame["Market Cap"] / frame["Net Income"], np.nan)
     frame["EV/EBITDA"] = np.where(frame["EBITDA"] > 0, frame["Enterprise Value"] / frame["EBITDA"], np.nan)
     columns = ["Company", "Market Cap", "P/E", "EV/EBITDA", "P/S", "P/B",
-               "Revenue Growth", "Net Margin"]
+               "Revenue Growth", "EBITDA Margin", "Net Margin"]
     if view == "Trailing + Forward":
         columns += ["Forward P/E", "PEG", "EPS Growth"]
     return frame[columns]
@@ -63,9 +70,11 @@ def _display_table(target: pd.Series, peers: pd.DataFrame, view: str) -> pd.Data
 st.session_state.setdefault("quick_comp_ticker", "MSFT")
 st.session_state.setdefault("quick_comp_manual", "")
 st.session_state.setdefault("quick_comp_package", None)
+for criterion, weight in DEFAULT_SIMILARITY_WEIGHTS.items():
+    st.session_state.setdefault(f"similarity_weight_{criterion}", weight * 100)
 
 page_header("Comparable Company Analysis", "Benchmark the target against sector peers and estimate its implied price from median trading multiples.")
-left, right = st.columns([3, 1])
+left, right = st.columns([3, 1], vertical_alignment="bottom")
 left.text_input("Ticker Symbol", key="quick_comp_ticker", placeholder="e.g., MSFT")
 run = right.button("Analyze", type="primary", use_container_width=True)
 st.text_input("Optional Manual Peers", key="quick_comp_manual",
@@ -123,8 +132,8 @@ currency = str(target["Currency"])
 
 section(f"{target['Company']} ({target.name})")
 top_metrics = [
-    ("Current Price", f"{currency} {target['Current Price']:,.2f}", str(target["Price Date"])),
-    ("Market Capitalization", _fmt_money(float(target["Market Cap"]), currency), "Equity value"),
+    (f"Current Price (in {currency})", f"{target['Current Price']:,.2f}", str(target["Price Date"])),
+    (f"Market Capitalization (in {currency})", _fmt_money(float(target["Market Cap"]), currency), "Equity value"),
     ("Revenue Growth", f"{target['Revenue Growth']*100:,.1f}%", "Latest reported period"),
     ("Net Profit Margin", f"{target['Net Margin']*100:,.1f}%", "Latest reported period"),
 ]
@@ -146,16 +155,82 @@ median = numeric_peers.median()
 median_row = pd.DataFrame([{**{"Company": "Peer Median"}, **median.to_dict()}], index=["MEDIAN"])
 comparison = pd.concat([comparison, median_row])
 
-percent_columns = [name for name in ["Revenue Growth", "Net Margin", "EPS Growth"] if name in comparison]
-formats = {column: "{:.1f}x" for column in ["P/E", "EV/EBITDA", "P/S", "P/B", "Forward P/E", "PEG"] if column in comparison}
+percent_columns = [
+    name for name in ["Revenue Growth", "EBITDA Margin", "Net Margin", "EPS Growth"]
+    if name in comparison
+]
+market_cap_label = f"Market Capitalization (in {currency} millions)"
+display_comparison = comparison.rename(columns={"Market Cap": market_cap_label}).copy()
+display_comparison[market_cap_label] = pd.to_numeric(display_comparison[market_cap_label], errors="coerce") / 1_000_000
+formats = {column: "{:.1f}x" for column in ["P/E", "EV/EBITDA", "P/S", "P/B", "Forward P/E", "PEG"] if column in display_comparison}
 formats.update({column: "{:.1%}" for column in percent_columns})
-formats["Market Cap"] = "{:,.0f}"
-st.dataframe(comparison.style.format(formats, na_rep="N/M")
-             .background_gradient(subset=[c for c in ["P/E", "EV/EBITDA", "P/S", "P/B"] if c in comparison],
+formats[market_cap_label] = "{:,.1f}"
+st.dataframe(display_comparison.style.format(formats, na_rep="N/M")
+             .background_gradient(subset=[c for c in ["P/E", "EV/EBITDA", "P/S", "P/B"] if c in display_comparison],
                                   cmap="RdYlGn_r"),
-             use_container_width=True, height=min(490, 75 + 36 * len(comparison)))
+             use_container_width=True, height=min(490, 75 + 36 * len(display_comparison)))
 st.caption(f"Source: {package['source']} · Target financial period: {target['Financial Date']} · "
            f"Price date: {target['Price Date']} · Peer count: {len(peers)}")
+
+section("Comparable Similarity")
+st.caption(
+    "Each available criterion is scored from 0% to 100%. The weighted total is divided by the "
+    "available-weight denominator, so missing provider fields are excluded rather than assigned synthetic scores."
+)
+with st.expander("Similarity Weights", expanded=True):
+    weight_columns = st.columns(4)
+    similarity_weights = {}
+    for index, criterion in enumerate(SIMILARITY_CRITERIA):
+        with weight_columns[index % 4]:
+            similarity_weights[criterion] = st.number_input(
+                criterion,
+                min_value=0.0,
+                max_value=100.0,
+                step=1.0,
+                key=f"similarity_weight_{criterion}",
+                help="Weights must total 100%. Scores with unavailable source data are excluded from the peer-specific denominator.",
+            ) / 100
+    total_weight = sum(similarity_weights.values())
+    st.metric("Total Weight", f"{total_weight:.1%}")
+
+if not np.isclose(total_weight, 1.0, atol=1e-6):
+    st.warning(f"Similarity weights must total 100%. Current total: {total_weight:.1%}.")
+else:
+    similarity = comparable_similarity(target.to_dict(), peers, similarity_weights)
+    if similarity.empty:
+        st.info("Comparable similarity could not be calculated because no peer observations were available.")
+    else:
+        unavailable = [
+            criterion for criterion in SIMILARITY_CRITERIA
+            if similarity[f"{criterion} Score"].isna().all()
+        ]
+        if unavailable:
+            st.info(
+                "Data unavailable across the peer set: "
+                + ", ".join(unavailable)
+                + ". These criteria are shown as Data unavailable and excluded from the score denominator."
+            )
+        similarity_display = similarity.reset_index()
+        ordered_columns = ["Similarity Rank", "Ticker", "Comparable Company"]
+        for criterion in SIMILARITY_CRITERIA:
+            ordered_columns.extend([f"{criterion} Score", f"{criterion} Weight"])
+        ordered_columns.extend(["Weighted Total", "Available Weight", "Overall Similarity"])
+        similarity_display = similarity_display[ordered_columns]
+        similarity_formats = {
+            column: "{:.1%}" for column in similarity_display.columns
+            if column.endswith(" Score") or column.endswith(" Weight")
+        }
+        similarity_formats.update({
+            "Weighted Total": "{:.1%}",
+            "Available Weight": "{:.1%}",
+            "Overall Similarity": "{:.1%}",
+        })
+        st.dataframe(
+            similarity_display.style.format(similarity_formats, na_rep="Data unavailable")
+            .background_gradient(subset=["Overall Similarity"], cmap="YlGn"),
+            hide_index=True,
+            width="stretch",
+        )
 
 section("Peer Company Medians")
 median_items = [
@@ -164,6 +239,7 @@ median_items = [
     ("P/Sales", median.get("P/S"), "x"),
     ("P/Book", median.get("P/B"), "x"),
     ("Revenue Growth", median.get("Revenue Growth"), "%"),
+    ("EBITDA Margin", median.get("EBITDA Margin"), "%"),
     ("Net Profit Margin", median.get("Net Margin"), "%"),
 ]
 median_cards = []
@@ -184,19 +260,72 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+section("Peer Multiple Distribution and Outliers")
+multiple_stats = peer_multiple_statistics(peers)
+if multiple_stats.empty:
+    st.info("Peer quartiles and means are unavailable because no valid positive multiples were found.")
+else:
+    st.dataframe(
+        multiple_stats.reset_index().style.format({
+            "25th Percentile": "{:.1f}x",
+            "Median": "{:.1f}x",
+            "Mean": "{:.1f}x",
+            "75th Percentile": "{:.1f}x",
+        }, na_rep="N/M"),
+        hide_index=True,
+        width="stretch",
+    )
+    outlier_table = identify_multiple_outliers(peers)
+    if outlier_table.empty:
+        st.success("No extreme peer multiples were identified under the 1.5×IQR rule.")
+    else:
+        with st.expander("Identified Multiple Outliers"):
+            st.dataframe(
+                outlier_table.style.format({"Observed Value": "{:.1f}x"}),
+                hide_index=True,
+                width="stretch",
+            )
+
 section("Multiple-Implied Share Price")
 if implied.empty:
     st.warning("No valid combination of trading multiples and positive target fundamentals was available.")
 else:
-    st.dataframe(implied.style.format({
-        "Peer Median": "{:.1f}x", "Implied Price": f"{currency} {{:,.2f}}",
-        "Current Price": f"{currency} {{:,.2f}}", "Premium / Discount": "{:+.1%}",
-    }), use_container_width=True)
+    money_columns = {
+        "Implied Enterprise Value": f"Implied Enterprise Value (in {currency} millions)",
+        "Net Debt Adjustment": f"Net Debt Adjustment (in {currency} millions)",
+        "Implied Equity Value": f"Implied Equity Value (in {currency} millions)",
+        "Implied Price at 25th Percentile": f"Implied Price at 25th Percentile (in {currency} per share)",
+        "Implied Price": f"Implied Price (in {currency} per share)",
+        "Implied Price at 75th Percentile": f"Implied Price at 75th Percentile (in {currency} per share)",
+        "Current Price": f"Current Price (in {currency} per share)",
+    }
+    implied_display = implied.rename(columns=money_columns).copy()
+    for source in ["Implied Enterprise Value", "Net Debt Adjustment", "Implied Equity Value"]:
+        implied_display[money_columns[source]] = implied_display[money_columns[source]] / 1_000_000
+    implied_formats = {
+        "Peer 25th Percentile": "{:.1f}x",
+        "Peer Median": "{:.1f}x",
+        "Peer Mean": "{:.1f}x",
+        "Peer 75th Percentile": "{:.1f}x",
+        "Target Multiple": "{:.1f}x",
+        "Premium / Discount": "{:+.1%}",
+        money_columns["Implied Enterprise Value"]: "{:,.1f}",
+        money_columns["Net Debt Adjustment"]: "{:,.1f}",
+        money_columns["Implied Equity Value"]: "{:,.1f}",
+        money_columns["Implied Price at 25th Percentile"]: "{:,.2f}",
+        money_columns["Implied Price"]: "{:,.2f}",
+        money_columns["Implied Price at 75th Percentile"]: "{:,.2f}",
+        money_columns["Current Price"]: "{:,.2f}",
+    }
+    st.dataframe(
+        implied_display.style.format(implied_formats, na_rep="N/M"),
+        width="stretch",
+    )
     prices = implied["Implied Price"]
     blended = prices.median()
     result_metrics = [
-        ("Blended Midpoint", f"{currency} {blended:,.2f}", f"{blended/target['Current Price']-1:+.1%} vs. current price"),
-        ("Valuation Range", f"{currency} {prices.min():,.2f} – {prices.max():,.2f}", "Low to high implied price"),
+        (f"Blended Midpoint (in {currency} per share)", f"{blended:,.2f}", f"{blended/target['Current Price']-1:+.1%} vs. current price"),
+        (f"Valuation Range (in {currency} per share)", f"{prices.min():,.2f} – {prices.max():,.2f}", "Low to high implied price"),
         ("Valid Methods", str(len(prices)), "Enterprise- and equity-value multiples"),
     ]
     st.markdown(
@@ -210,6 +339,24 @@ else:
     )
     expensive = int((target_calc[implied.index] > implied["Peer Median"]).sum())
     verdict = "premium" if blended < target["Current Price"] else "discount"
+    preferred_order = ["EV/EBITDA", "P/E", "P/S", "P/B"]
+    selected_multiple = next((item for item in preferred_order if item in implied.index), None)
+    if selected_multiple:
+        selected = implied.loc[selected_multiple]
+        selection_reason = {
+            "EV/EBITDA": "selected because it reduces capital-structure differences and the target has positive EBITDA",
+            "P/E": "selected because EV/EBITDA was unavailable and the target has positive net income",
+            "P/S": "selected because earnings-based multiples were unavailable",
+            "P/B": "selected as the remaining valid balance-sheet-based reference",
+        }[selected_multiple]
+        target_multiple = selected["Target Multiple"]
+        premium_discount = target_multiple / selected["Peer Median"] - 1 if np.isfinite(target_multiple) else np.nan
+        premium_text = f"{premium_discount:+.1%} versus peer median" if np.isfinite(premium_discount) else "Target multiple unavailable"
+        banner(
+            "Selected Multiple",
+            f"{selected_multiple} at {selected['Peer Median']:.1f}x peer median; {selection_reason}. "
+            f"Target trading multiple: {target_multiple:.1f}x ({premium_text}).",
+        )
     banner("Analyst Interpretation", f"The target appears to trade at an approximate "
            f"{abs(blended/target['Current Price']-1)*100:.1f}% {verdict} to the blended peer-implied value. "
            f"It is more expensive than the peer median on {expensive} of {len(implied)} valid multiples. "

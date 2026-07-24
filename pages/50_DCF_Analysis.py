@@ -7,11 +7,14 @@ import json
 
 import numpy as np
 import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
 
 from src.ccv_provider import company_record
 from src.ui import footer, page_header, section
+from valuation_platform.ccv import calculate_multiples
 from valuation_platform.market_tools import (
+    comparable_implied_prices,
     dcf_sensitivity,
     forward_dcf,
     reverse_dcf,
@@ -19,6 +22,7 @@ from valuation_platform.market_tools import (
     scenario_table,
 )
 from valuation_platform.model import historical_metrics
+from valuation_platform.professional_analysis import football_field_ranges
 
 
 def _money(value: float, currency: str, decimals: int = 1) -> str:
@@ -26,8 +30,8 @@ def _money(value: float, currency: str, decimals: int = 1) -> str:
         return "N/M"
     for divisor, suffix in ((1e12, "T"), (1e9, "B"), (1e6, "M")):
         if abs(value) >= divisor:
-            return f"{currency} {value/divisor:,.{decimals}f}{suffix}"
-    return f"{currency} {value:,.2f}"
+            return f"{value/divisor:,.{decimals}f}{suffix}"
+    return f"{value:,.2f}"
 
 
 def _grouped_number(value: float, decimals: int = 0) -> str:
@@ -59,22 +63,90 @@ def _grouped_number_input(label: str, key: str, decimals: int = 0, help_text: st
     return float(st.session_state[key])
 
 
-def _normalize_calculation_schema(scenarios: pd.DataFrame, schedule: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Accept both legacy Turkish and current English calculation schemas during cloud hot reloads."""
+def _normalize_scenario_schema(scenarios: pd.DataFrame) -> pd.DataFrame:
+    """Accept legacy scenario schemas during Streamlit Cloud hot reloads."""
     scenarios = scenarios.rename(columns={
         "FCF Büyümesi": "FCF Growth",
         "Hisse Başı Değer": "Value Per Share",
         "Fiyat Farkı": "Upside / Downside",
     }).rename(index={"Ayı": "Bear", "Baz": "Base", "Boğa": "Bull"})
     scenarios.index.name = "Scenario"
-    schedule = schedule.rename(columns={
-        "Yıl": "Year",
-        "Büyüme": "Growth",
-        "Serbest Nakit Akışı": "Free Cash Flow",
-        "İskonto Faktörü": "Discount Factor",
-        "Bugünkü Değer": "Present Value",
-    })
-    return scenarios, schedule
+    return scenarios
+
+
+def _football_field_chart(ranges: pd.DataFrame, current_price: float, currency: str) -> go.Figure:
+    """Render like-for-like implied share-price ranges with explicit midpoints."""
+    frame = ranges.sort_values("Midpoint")
+    figure = go.Figure()
+    for _, row in frame.iterrows():
+        hover = (
+            f"<b>{row['Method']}</b><br>"
+            f"Low: {row['Low']:,.2f}<br>Midpoint: {row['Midpoint']:,.2f}<br>"
+            f"High: {row['High']:,.2f}<br>{row['Methodology']}<extra></extra>"
+        )
+        figure.add_trace(go.Scatter(
+            x=[row["Low"], row["High"]],
+            y=[row["Method"], row["Method"]],
+            mode="lines",
+            line={"color": "#D6B04C", "width": 14},
+            hovertemplate=hover,
+            showlegend=False,
+        ))
+        figure.add_trace(go.Scatter(
+            x=[row["Midpoint"]],
+            y=[row["Method"]],
+            mode="markers",
+            marker={"color": "#F4F6F8", "size": 11, "line": {"color": "#050607", "width": 2}},
+            hovertemplate=hover,
+            showlegend=False,
+        ))
+    if np.isfinite(current_price) and current_price > 0:
+        figure.add_vline(
+            x=current_price,
+            line_dash="dash",
+            line_color="#EF6268",
+            annotation_text="Current Share Price",
+            annotation_font_color="#EF6268",
+        )
+    figure.update_layout(
+        height=max(340, 90 + 70 * len(frame)),
+        margin={"l": 20, "r": 20, "t": 25, "b": 35},
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font={"color": "#F4F6F8"},
+        xaxis={
+            "title": f"Implied Share Price (in {currency})",
+            "gridcolor": "#252B33",
+            "tickformat": ",.2f",
+        },
+        yaxis={"title": None, "gridcolor": "#252B33"},
+        hoverlabel={"bgcolor": "#111419", "font_color": "#F4F6F8"},
+    )
+    return figure
+
+
+def _operating_context(package: dict | None) -> list[tuple[str, float | None, str]]:
+    """Return observed operating context without inventing forecast assumptions."""
+    if not package:
+        return []
+    record = package["record"]
+    history = package["historical"]
+    latest = history.iloc[-1]
+    revenue = float(latest.get("Revenue", np.nan))
+    previous_nwc = float(history["NWC"].iloc[-2]) if len(history) > 1 else np.nan
+    tax_denominator = float(latest.get("Net Income", np.nan)) + float(latest.get("Tax Expense", np.nan))
+
+    def ratio(numerator: float, denominator: float) -> float | None:
+        return numerator / denominator if np.isfinite(numerator) and np.isfinite(denominator) and denominator != 0 else None
+
+    return [
+        ("Revenue Growth", float(record.get("Revenue Growth", np.nan)), "Latest reported period"),
+        ("EBITDA Margin", float(record.get("EBITDA Margin", np.nan)), "Latest reported period"),
+        ("Effective Tax Rate", ratio(float(latest.get("Tax Expense", np.nan)), tax_denominator), "Tax expense ÷ pre-tax income proxy"),
+        ("CapEx / Revenue", ratio(float(latest.get("Capital Expenditure", np.nan)), revenue), "Latest reported period"),
+        ("D&A / Revenue", ratio(float(latest.get("D&A", np.nan)), revenue), "Latest reported period"),
+        ("Change in NWC / Revenue", ratio(float(latest.get("NWC", np.nan)) - previous_nwc, revenue), "Latest reported period"),
+    ]
 
 
 def _result_card(result: dict, company: str, currency: str) -> None:
@@ -85,11 +157,11 @@ def _result_card(result: dict, company: str, currency: str) -> None:
     st.markdown(
         f"""<div class="br-result {tone}">
         <div class="br-kicker">{html.escape(company)}</div>
-        <div class="br-note">DCF-implied equity value</div>
+        <div class="br-note">DCF-implied equity value (in {currency})</div>
         <div class="br-big">{_money(result['Equity Value'], currency)}</div>
         <div class="br-grid">
-          <div class="br-stat"><span>Per Share</span><strong>{currency} {result['Per Share']:,.2f}</strong></div>
-          <div class="br-stat"><span>Current Price</span><strong>{currency} {(result['Current Price'] or 0):,.2f}</strong></div>
+          <div class="br-stat"><span>Per Share (in {currency})</span><strong>{result['Per Share']:,.2f}</strong></div>
+          <div class="br-stat"><span>Current Price (in {currency})</span><strong>{(result['Current Price'] or 0):,.2f}</strong></div>
           <div class="br-stat"><span>Price Difference</span><strong>{delta}</strong></div>
         </div>
         <p class="br-note" style="margin-top:18px">Terminal value represents {result['Terminal Share']*100:.1f}% of enterprise value.
@@ -155,7 +227,7 @@ page_header("DCF Valuation Laboratory",
 st.radio("Analysis Mode", ["Forward DCF — Fair Value", "Reverse DCF — Implied Growth"],
          horizontal=True, key="dcf_mode", label_visibility="collapsed")
 
-search_left, search_right = st.columns([4, 1])
+search_left, search_right = st.columns([4, 1], vertical_alignment="bottom")
 search_left.text_input("Ticker Symbol", key="dcf_quick_ticker", placeholder="e.g., AAPL")
 load = search_right.button("Load Data", type="primary", width="stretch")
 
@@ -219,9 +291,7 @@ if st.session_state.dcf_mode.startswith("Forward"):
         st.session_state.dcf_net_debt, st.session_state.dcf_price or result["Per Share"],
         st.session_state.dcf_midyear, st.session_state.dcf_fade,
     )
-    scenarios, normalized_schedule = _normalize_calculation_schema(
-        scenarios, result["Schedule"].copy(),
-    )
+    scenarios = _normalize_scenario_schema(scenarios)
     scenario_spread = scenarios["Value Per Share"].max() - scenarios["Value Per Share"].min()
     spread_ratio = scenario_spread / max(st.session_state.dcf_price, result["Per Share"], 1)
     sensitivity_label = "Low" if spread_ratio < .30 else ("Moderate" if spread_ratio < .75 else "High")
@@ -249,19 +319,20 @@ if st.session_state.dcf_mode.startswith("Forward"):
                     unsafe_allow_html=True)
 
     section("WACC × Terminal Growth Sensitivity")
-    sensitivity = dcf_sensitivity(
+    raw_sensitivity = dcf_sensitivity(
         st.session_state.dcf_base_fcf, growth, terminal, rate,
         st.session_state.dcf_years, st.session_state.dcf_shares,
         st.session_state.dcf_net_debt, st.session_state.dcf_midyear,
         st.session_state.dcf_fade,
-    ).T
+    )
+    sensitivity = raw_sensitivity.T
     sensitivity.index = [f"%{item*100:.1f}" for item in sensitivity.index]
     sensitivity.index.name = "Terminal Growth"
     sensitivity.columns = [f"WACC {item*100:.1f}%" for item in sensitivity.columns]
     sensitivity_display = sensitivity.reset_index()
     st.dataframe(
         sensitivity_display.style.format(
-            {column: f"{currency} {{:,.2f}}" for column in sensitivity.columns}
+            {column: "{:,.2f}" for column in sensitivity.columns}
         ).background_gradient(subset=list(sensitivity.columns), cmap="RdYlGn"),
         column_config={
             "Terminal Growth": st.column_config.TextColumn(
@@ -271,7 +342,7 @@ if st.session_state.dcf_mode.startswith("Forward"):
         hide_index=True,
         width="stretch",
     )
-    st.caption("Green cells indicate higher implied values and red cells indicate lower implied values. "
+    st.caption(f"All values are implied share prices in {currency}. Green cells indicate higher implied values and red cells indicate lower implied values. "
                "Assess whether the conclusion remains robust across a broad range of assumptions.")
 
     section("Scenario Comparison")
@@ -282,24 +353,98 @@ if st.session_state.dcf_mode.startswith("Forward"):
             st.markdown(
                 f"""<div class="br-result {scenario_tones[name]}">
                 <div class="br-kicker">{name} Case</div>
-                <div class="br-big" style="font-size:2.1rem">{currency} {row['Value Per Share']:,.2f}</div>
+                <div class="br-big" style="font-size:2.1rem">{row['Value Per Share']:,.2f}</div>
                 <div class="br-note">Growth {row['FCF Growth']*100:.1f}% · WACC {row['WACC']*100:.1f}%<br>
-                Upside / downside {row['Upside / Downside']:+.1%}</div></div>""",
+                Upside / downside {row['Upside / Downside']:+.1%}<br>Implied share price in {currency}</div></div>""",
                 unsafe_allow_html=True,
             )
 
-    section("Present Value Breakdown")
-    schedule = normalized_schedule
-    pv_chart = schedule.set_index("Year")[["Present Value"]]
-    pv_chart.index = [f"Year {year}" for year in pv_chart.index]
-    pv_chart.loc["Terminal Value"] = result["PV Terminal"]
-    pv_chart["Share of Present Value"] = pv_chart["Present Value"] / pv_chart["Present Value"].sum()
-    st.bar_chart(pv_chart[["Share of Present Value"]], height=360)
-    st.caption("The chart displays each component as a share of total present value so Years 1–5/10 remain visible even when terminal value is dominant.")
-    st.dataframe(schedule.style.format({
-        "Growth": "{:.1%}", "Free Cash Flow": f"{currency} {{:,.0f}}",
-        "Discount Factor": "{:.4f}", "Present Value": f"{currency} {{:,.0f}}",
-    }), hide_index=True, width="stretch")
+    section("Football Field Valuation")
+    comparable_prices = None
+    quick_comp_package = st.session_state.get("quick_comp_package")
+    if quick_comp_package and package:
+        quick_target = quick_comp_package.get("target", {})
+        if quick_target.get("Ticker") == record.get("Ticker"):
+            quick_peers = calculate_multiples(quick_comp_package["peers"])
+            quick_target_calc = calculate_multiples(pd.DataFrame([quick_target])).iloc[0]
+            quick_target_calc["P/S"] = quick_target.get("P/S")
+            quick_target_calc["P/B"] = quick_target.get("P/B")
+            comparable_prices = comparable_implied_prices(quick_target_calc, quick_peers)
+    football_ranges = football_field_ranges(
+        raw_sensitivity,
+        rate,
+        terminal,
+        comparable_prices,
+    )
+    if football_ranges.empty:
+        st.info("No like-for-like implied share-price ranges were available for the football field.")
+    else:
+        st.plotly_chart(
+            _football_field_chart(football_ranges, st.session_state.dcf_price, currency),
+            width="stretch",
+            key="dcf_football_field",
+        )
+        st.dataframe(
+            football_ranges.style.format({
+                "Low": "{:,.2f}",
+                "Midpoint": "{:,.2f}",
+                "High": "{:,.2f}",
+            }),
+            hide_index=True,
+            width="stretch",
+        )
+        st.caption(
+            f"All ranges use implied share price in {currency}; enterprise value and equity value are not mixed. "
+            "Trading-comparable ranges appear only when a comparable analysis for the same ticker exists in this session. "
+            "Precedent transactions are omitted because no verified transaction dataset is available."
+        )
+
+    section("DCF Valuation Bridge")
+    bridge_items = [
+        (f"Enterprise Value (in {currency})", _money(result["Enterprise Value"], currency), "PV of explicit FCF plus terminal value"),
+        (f"Net Debt Adjustment (in {currency})", _money(-result["Net Debt"], currency), "Debt less cash; subtracted from enterprise value"),
+        (f"Equity Value (in {currency})", _money(result["Equity Value"], currency), "Enterprise value less net debt"),
+        (f"Implied Share Price (in {currency})", f"{result['Per Share']:,.2f}", f"{result['Upside']:+.1%} versus current price" if np.isfinite(result["Upside"]) else "Current price unavailable"),
+    ]
+    st.markdown(
+        "<div class='br-shell dcf-bridge-grid'><div class='br-grid'>"
+        + "".join(
+            f"<div class='br-stat'><span>{label}</span><strong>{value}</strong><small>{note}</small></div>"
+            for label, value, note in bridge_items
+        )
+        + "</div></div>",
+        unsafe_allow_html=True,
+    )
+
+    section("WACC Breakdown")
+    st.info(
+        f"Selected WACC: {rate:.1%}. A cost-of-equity and after-tax cost-of-debt decomposition is not shown "
+        "because this streamlined DCF accepts WACC directly and does not collect the required risk-free rate, "
+        "equity risk premium, beta, borrowing cost, tax rate, and target capital structure. No components were fabricated."
+    )
+
+    section("Key Assumptions and Operating Context")
+    context = _operating_context(package)
+    assumption_rows = [
+        {"Item": "Forecast FCF Growth", "Value": f"{growth:.1%}", "Basis": "User-selected DCF assumption"},
+        {"Item": "Terminal Growth Rate", "Value": f"{terminal:.1%}", "Basis": "User-selected DCF assumption"},
+        {"Item": "WACC", "Value": f"{rate:.1%}", "Basis": "User-selected DCF assumption"},
+        {"Item": "Forecast Period", "Value": f"{st.session_state.dcf_years} years", "Basis": "User-selected DCF assumption"},
+    ]
+    for label, value, basis in context:
+        assumption_rows.append({
+            "Item": label,
+            "Value": f"{value:.1%}" if value is not None and np.isfinite(value) else "Data unavailable",
+            "Basis": basis,
+        })
+    st.dataframe(pd.DataFrame(assumption_rows), hide_index=True, width="stretch")
+    if not package:
+        st.caption("Revenue growth, EBITDA margin, tax, CapEx, D&A, and change in NWC are unavailable until a ticker is loaded.")
+    else:
+        st.caption(
+            "Operating metrics are latest observed context, not forecast drivers in this simplified FCF-growth DCF. "
+            "Data unavailable fields are not estimated."
+        )
 
     if package:
         analyst_target = float(pd.to_numeric(record.get("Analyst Target"), errors="coerce"))
@@ -309,12 +454,12 @@ if st.session_state.dcf_mode.startswith("Forward"):
             analyst_note = f"{int(analyst_count)} analysts" if np.isfinite(analyst_count) else "Consensus target"
             st.markdown(
                 f"""<div class="br-shell market-triad"><div class="br-grid">
-                <div class="br-stat"><span>Mean Analyst Target</span>
-                <strong>{currency} {analyst_target:,.2f}</strong><small>{analyst_note}</small></div>
-                <div class="br-stat"><span>Current Price</span>
-                <strong>{currency} {st.session_state.dcf_price:,.2f}</strong><small>Market price</small></div>
-                <div class="br-stat"><span>DCF Fair Value</span>
-                <strong>{currency} {result['Per Share']:,.2f}</strong><small>{result['Upside']:+.1%}</small></div>
+                <div class="br-stat"><span>Mean Analyst Target (in {currency} per share)</span>
+                <strong>{analyst_target:,.2f}</strong><small>{analyst_note}</small></div>
+                <div class="br-stat"><span>Current Price (in {currency} per share)</span>
+                <strong>{st.session_state.dcf_price:,.2f}</strong><small>Market price</small></div>
+                <div class="br-stat"><span>DCF Fair Value (in {currency} per share)</span>
+                <strong>{result['Per Share']:,.2f}</strong><small>{result['Upside']:+.1%}</small></div>
                 </div></div>""",
                 unsafe_allow_html=True,
             )
@@ -345,9 +490,9 @@ else:
             <div class="br-big">{implied_growth*100:.1f}%</div>
             <div class="br-kicker">{risk}</div>
             <div class="br-grid">
-              <div class="br-stat"><span>Share Price</span><strong>{currency} {st.session_state.dcf_price:,.2f}</strong></div>
-              <div class="br-stat"><span>Market Capitalization</span><strong>{_money(st.session_state.dcf_price*st.session_state.dcf_shares,currency)}</strong></div>
-              <div class="br-stat"><span>Current FCF</span><strong>{_money(st.session_state.dcf_base_fcf,currency)}</strong></div>
+              <div class="br-stat"><span>Share Price (in {currency})</span><strong>{st.session_state.dcf_price:,.2f}</strong></div>
+              <div class="br-stat"><span>Market Capitalization (in {currency})</span><strong>{_money(st.session_state.dcf_price*st.session_state.dcf_shares,currency)}</strong></div>
+              <div class="br-stat"><span>Current FCF (in {currency})</span><strong>{_money(st.session_state.dcf_base_fcf,currency)}</strong></div>
             </div></div>""",
             unsafe_allow_html=True,
         )
